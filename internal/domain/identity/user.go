@@ -29,11 +29,13 @@ type UserProfile struct {
 	AddressDetail  *string
 	LastActiveRole *string
 	TermsVersion   *string
-	CreatedAt      time.Time
-	WardCode       *int32
-	WardName       *string
-	ProvinceCode   *int32
-	ProvinceName   *string
+	// AcceptsInvitations is false when the person asked not to be invited to rent a room or manage one.
+	AcceptsInvitations bool
+	CreatedAt          time.Time
+	WardCode           *int32
+	WardName           *string
+	ProvinceCode       *int32
+	ProvinceName       *string
 }
 
 // AuthUser is what a request needs to know about its caller: the account state and every role it holds,

@@ -21,15 +21,39 @@ type Limiter interface {
 // that fails (Redis down) answers 503 rather than letting everything through.
 func RateLimit(l Limiter, bucket string, limit int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		res, err := l.Allow(c.Request.Context(), bucket+":"+c.ClientIP(), limit, window)
-		if err != nil {
-			Fail(c, apperr.Busy(err))
-			return
-		}
-		if !res.Allowed {
-			Fail(c, apperr.RateLimited(int(math.Ceil(res.RetryAfter.Seconds()))))
+		if !allow(c, l, bucket+":"+c.ClientIP(), limit, window) {
 			return
 		}
 		c.Next()
 	}
+}
+
+// RateLimitPerUser is RateLimit counted per signed-in account instead of per address, so one landlord behind a shared
+// connection cannot use up another one's allowance. Put it after RequireAuth: without a caller it answers 401.
+func RateLimitPerUser(l Limiter, bucket string, limit int, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		p, ok := PrincipalOf(c)
+		if !ok {
+			Fail(c, apperr.Unauthenticated())
+			return
+		}
+		if !allow(c, l, bucket+":u:"+p.UserID, limit, window) {
+			return
+		}
+		c.Next()
+	}
+}
+
+// allow counts one request against key and answers the request itself (and returns false) when it must stop.
+func allow(c *gin.Context, l Limiter, key string, limit int, window time.Duration) bool {
+	res, err := l.Allow(c.Request.Context(), key, limit, window)
+	if err != nil {
+		Fail(c, apperr.Busy(err))
+		return false
+	}
+	if !res.Allowed {
+		Fail(c, apperr.RateLimited(int(math.Ceil(res.RetryAfter.Seconds()))))
+		return false
+	}
+	return true
 }

@@ -8,6 +8,12 @@ sql:
       - db/queries/identity
       - db/queries/location
       - db/queries/property
+      - db/queries/contract
+      - db/queries/plan
+      - db/queries/listing
+      - db/queries/invoice
+      - db/queries/invitation
+      - db/queries/payment
     gen:
       go:
         package: sqlc
@@ -27,6 +33,14 @@ sql:
           - db_type: timestamptz
             go_type: time.Time
           - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true
+          - db_type: date
+            go_type: time.Time
+          - db_type: date
             nullable: true
             go_type:
               import: time

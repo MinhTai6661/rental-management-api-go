@@ -687,3 +687,36 @@ func TestSeedDemoIsIdempotentAndNeverMixesStaff(t *testing.T) {
 		}
 	}
 }
+
+func TestPreferencesSwitchInvitationsOffAndOn(t *testing.T) {
+	e := newEnv(t)
+	e.verified("pref@example.vn")
+	token := e.signedIn("pref@example.vn").Tokens.AccessToken
+
+	me := func() identityhttp.UserView {
+		return decodeData[identityhttp.UserView](t, e.call(http.MethodGet, "/v1/auth/me", nil, token))
+	}
+	if !me().AcceptsInvitations {
+		t.Fatal("a new account accepts invitations")
+	}
+
+	w := e.call(http.MethodPut, "/v1/me/preferences", map[string]any{"accepts_invitations": false}, token)
+	expectStatus(t, w, http.StatusOK)
+	if decodeData[identityhttp.UserView](t, w).AcceptsInvitations || me().AcceptsInvitations {
+		t.Error("the preference is off in the answer and when read back through /auth/me")
+	}
+
+	// A body without the field changes nothing.
+	expectStatus(t, e.call(http.MethodPut, "/v1/me/preferences", map[string]any{}, token), http.StatusOK)
+	if me().AcceptsInvitations {
+		t.Error("an empty change must keep the preference off")
+	}
+
+	expectStatus(t, e.call(http.MethodPut, "/v1/me/preferences", map[string]any{"accepts_invitations": true}, token), http.StatusOK)
+	if !me().AcceptsInvitations {
+		t.Error("the preference is back on")
+	}
+
+	expectError(t, e.call(http.MethodPut, "/v1/me/preferences", map[string]any{"accepts_invitations": "no"}, token), http.StatusBadRequest, "request.malformed")
+	expectError(t, e.call(http.MethodPut, "/v1/me/preferences", map[string]any{"accepts_invitations": true}, ""), http.StatusUnauthorized, "auth.unauthenticated")
+}

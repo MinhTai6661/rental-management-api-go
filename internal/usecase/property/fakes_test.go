@@ -405,6 +405,12 @@ func (f fakeGuards) Blockers(context.Context, []uuid.UUID) (map[uuid.UUID]domain
 type recordingObserver struct {
 	statuses []domain.StatusChange
 	content  [][]uuid.UUID
+	deleted  [][]uuid.UUID
+}
+
+func (r *recordingObserver) Deleted(_ context.Context, ids []uuid.UUID) error {
+	r.deleted = append(r.deleted, ids)
+	return nil
 }
 
 func (r *recordingObserver) StatusChanged(_ context.Context, c []domain.StatusChange) error {

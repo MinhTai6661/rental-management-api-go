@@ -45,6 +45,7 @@ type fakeUsers struct {
 	roles     []string
 	newHash   string
 	lastRole  string
+	accepts   bool // the stored accepts_invitations of any account
 }
 
 func (f *fakeUsers) FindByEmail(_ context.Context, email string) (domain.User, error) {
@@ -68,7 +69,12 @@ func (f *fakeUsers) AddRole(_ context.Context, _ uuid.UUID, role string, _ time.
 }
 
 func (f *fakeUsers) Profile(_ context.Context, id uuid.UUID) (domain.UserProfile, error) {
-	return domain.UserProfile{ID: id, Email: &f.created[0].Email, FullName: f.created[0].FullName, Status: authz.StatusActive, TermsVersion: &f.created[0].TermsVersion}, nil
+	return domain.UserProfile{ID: id, Email: &f.created[0].Email, FullName: f.created[0].FullName, Status: authz.StatusActive, TermsVersion: &f.created[0].TermsVersion, AcceptsInvitations: f.accepts}, nil
+}
+
+func (f *fakeUsers) SetAcceptsInvitations(_ context.Context, _ uuid.UUID, accepts bool) error {
+	f.accepts = accepts
+	return nil
 }
 
 func (f *fakeUsers) AuthUser(context.Context, uuid.UUID) (domain.AuthUser, error) {

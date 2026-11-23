@@ -10,6 +10,59 @@ import (
 	"github.com/google/uuid"
 )
 
+type ContractInvitation struct {
+	ID              uuid.UUID
+	RoomID          uuid.UUID
+	LandlordID      uuid.UUID
+	CreatedByID     *uuid.UUID
+	Status          string
+	TokenHash       string
+	LinkTokenSealed *string
+	ExpiresAt       time.Time
+	PriceVnd        int64
+	DepositVnd      *int64
+	OccupantCount   int16
+	StartsOn        time.Time
+	EndsOn          *time.Time
+	ContractStatus  string
+	Note            *string
+	RecipientID     *uuid.UUID
+	RecipientEmail  *string
+	AnsweredByID    *uuid.UUID
+	AnsweredAt      *time.Time
+	ContractID      *uuid.UUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type InvoiceItem struct {
+	ID           uuid.UUID
+	InvoiceID    uuid.UUID
+	Kind         string
+	Description  string
+	Quantity     float64
+	UnitPriceVnd int64
+	AmountVnd    int64
+	DisplayOrder int16
+}
+
+type Listing struct {
+	ID            uuid.UUID
+	RoomID        uuid.UUID
+	LandlordID    uuid.UUID
+	Title         string
+	Description   *string
+	Status        string
+	SubmittedAt   *time.Time
+	ReviewedByID  *uuid.UUID
+	ReviewedAt    *time.Time
+	ReviewNote    *string
+	PublishedAt   *time.Time
+	UnpublishedAt *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type Medium struct {
 	ID           uuid.UUID
 	RoomID       *uuid.UUID
@@ -27,9 +80,50 @@ type Medium struct {
 	UpdatedAt    time.Time
 }
 
+type Payment struct {
+	ID                uuid.UUID
+	InvoiceID         uuid.UUID
+	PayerID           *uuid.UUID
+	Method            string
+	AmountVnd         int64
+	Status            string
+	Note              *string
+	ProofKeys         []string
+	ExternalReference *string
+	ReviewedByID      *uuid.UUID
+	ReviewedAt        *time.Time
+	ReviewNote        *string
+	RecordedByID      *uuid.UUID
+	PaidAt            *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type Permission struct {
 	Code        string
 	Description string
+}
+
+type Plan struct {
+	ID                      uuid.UUID
+	Code                    string
+	Name                    string
+	Description             *string
+	Audience                string
+	PriceVnd                int64
+	BillingInterval         string
+	MaxRooms                *int32
+	MaxBuildings            *int32
+	MaxImagesPerRoom        *int32
+	MaxActiveContracts      *int32
+	MaxPendingRegistrations *int32
+	SearchPriority          int32
+	Features                []string
+	IsDefault               bool
+	IsActive                bool
+	DisplayOrder            int32
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 type Role struct {
@@ -41,4 +135,18 @@ type Role struct {
 type RolePermission struct {
 	RoleCode       string
 	PermissionCode string
+}
+
+type Subscription struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	PlanID      uuid.UUID
+	Audience    string
+	Status      string
+	StartsAt    time.Time
+	EndsAt      *time.Time
+	CanceledAt  *time.Time
+	GrantedByID *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

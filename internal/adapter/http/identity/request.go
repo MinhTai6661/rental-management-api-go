@@ -53,3 +53,8 @@ type VerifyEmailRequest struct {
 type ResendEmailRequest struct {
 	Email string `json:"email" validate:"required,email,max=255"`
 }
+
+// PreferencesRequest is the body of PUT /me/preferences. A field that is absent stays as it is.
+type PreferencesRequest struct {
+	AcceptsInvitations *bool `json:"accepts_invitations"`
+}

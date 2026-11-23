@@ -156,7 +156,7 @@ func TestRequireAPINeedsDatabaseRedisAndSigningKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("the API cannot run with nothing configured")
 	}
-	for _, name := range []string{"DATABASE_URL", "REDIS_URL", "JWT_SECRET"} {
+	for _, name := range []string{"DATABASE_URL", "REDIS_URL", "JWT_SECRET", "DATA_ENCRYPTION_KEY"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("the error should name %s: %v", name, err)
 		}
@@ -166,6 +166,8 @@ func TestRequireAPINeedsDatabaseRedisAndSigningKey(t *testing.T) {
 		"DATABASE_URL": "postgres://u@localhost:5442/app?sslmode=disable",
 		"REDIS_URL":    "redis://localhost:6389/0",
 		"JWT_SECRET":   secret,
+
+		"DATA_ENCRYPTION_KEY": dataKey,
 	}
 	cfg, err = parse(full)
 	if err != nil {
@@ -203,6 +205,129 @@ func TestEmailAndSeedSettings(t *testing.T) {
 		"zero verification ttl": {"EMAIL_VERIFICATION_TTL": "0s"},
 		"zero resend cooldown":  {"EMAIL_RESEND_COOLDOWN": "0s"},
 		"short demo password":   {"SEED_DEMO_PASSWORD": "short"},
+	} {
+		if _, err := parse(vars); err == nil {
+			t.Errorf("%s must be refused", name)
+		}
+	}
+}
+
+func TestStorageDefaultsToLocalDisk(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageDriver != "local" || cfg.S3Region != "auto" || !cfg.S3PathStyle {
+		t.Errorf("unexpected storage defaults: %+v", cfg)
+	}
+}
+
+func TestS3SettingsAreRequiredOnlyForTheS3Driver(t *testing.T) {
+	full := map[string]string{
+		"STORAGE_DRIVER":       "s3",
+		"S3_ENDPOINT":          "https://acct.r2.cloudflarestorage.com",
+		"S3_BUCKET":            "pictures",
+		"S3_ACCESS_KEY_ID":     "key-id",
+		"S3_SECRET_ACCESS_KEY": "very-secret-value",
+	}
+	cfg, err := parse(full)
+	if err != nil {
+		t.Fatalf("complete s3 settings: %v", err)
+	}
+	if cfg.S3Region != "auto" || !cfg.S3PathStyle {
+		t.Errorf("s3 defaults: %+v", cfg)
+	}
+
+	for _, name := range []string{"S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"} {
+		vars := map[string]string{}
+		for k, v := range full {
+			if k != name {
+				vars[k] = v
+			}
+		}
+		_, err := parse(vars)
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("without %s the error must name it: %v", name, err)
+		}
+	}
+
+	bad := map[string]map[string]string{
+		"unknown driver":     {"STORAGE_DRIVER": "gcs"},
+		"endpoint no scheme": {"STORAGE_DRIVER": "s3", "S3_ENDPOINT": "localhost:8333", "S3_BUCKET": "b", "S3_ACCESS_KEY_ID": "k", "S3_SECRET_ACCESS_KEY": "very-secret-value"},
+		"endpoint with path": {"STORAGE_DRIVER": "s3", "S3_ENDPOINT": "http://localhost:8333/b", "S3_BUCKET": "b", "S3_ACCESS_KEY_ID": "k", "S3_SECRET_ACCESS_KEY": "very-secret-value"},
+	}
+	for name, vars := range bad {
+		if _, err := parse(vars); err == nil {
+			t.Errorf("%s: expected an error", name)
+		} else if strings.Contains(err.Error(), "very-secret-value") {
+			t.Errorf("%s: the error leaks the secret: %v", name, err)
+		}
+	}
+
+	// Settings of the other driver are not needed (and not checked) while the driver is local.
+	if _, err := parse(map[string]string{"S3_BUCKET": "x"}); err != nil {
+		t.Errorf("local driver with a stray S3 setting: %v", err)
+	}
+}
+
+// dataKey is 32 bytes in standard base64.
+const dataKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
+func TestDataKeyAndInvoiceSettings(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HasDataKey() || cfg.InvoiceDueDays != 7 || cfg.InvoiceShareTTLDays != 90 || cfg.InvoiceReminderDays != 3 || cfg.InvitationTTLDays != 7 {
+		t.Errorf("unexpected defaults: %+v", cfg)
+	}
+	if _, err := cfg.DataKey(); err == nil {
+		t.Error("a missing key is an error")
+	}
+
+	cfg, err = parse(map[string]string{"DATA_ENCRYPTION_KEY": dataKey, "INVOICE_DUE_DAYS": "10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key, err := cfg.DataKey(); err != nil || len(key) != 32 || cfg.InvoiceDueDays != 10 {
+		t.Errorf("key %d bytes, %v", len(key), err)
+	}
+
+	for name, vars := range map[string]map[string]string{
+		"not base64":          {"DATA_ENCRYPTION_KEY": "***"},
+		"too short":           {"DATA_ENCRYPTION_KEY": "c2hvcnQ="},
+		"zero due days":       {"INVOICE_DUE_DAYS": "0"},
+		"huge share ttl":      {"INVOICE_SHARE_TTL_DAYS": "99999"},
+		"zero reminder":       {"INVOICE_REMINDER_DAYS": "0"},
+		"zero invitation ttl": {"INVITATION_TTL_DAYS": "0"},
+		"huge invitation ttl": {"INVITATION_TTL_DAYS": "91"},
+	} {
+		_, err := parse(vars)
+		if err == nil {
+			t.Errorf("%s must be refused", name)
+		} else if strings.Contains(err.Error(), "***") || strings.Contains(err.Error(), "c2hvcnQ=") {
+			t.Errorf("%s: the error must not repeat the key: %v", name, err)
+		}
+	}
+}
+
+func TestPaymentProofSettings(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PaymentProofMaxFiles != 3 || cfg.PaymentProofMaxSizeKB != 1024 || cfg.PaymentProofURLTTLMinutes != 120 || cfg.APIPublicURL != "http://localhost:8090" {
+		t.Errorf("unexpected defaults: %+v", cfg)
+	}
+	for name, vars := range map[string]map[string]string{
+		"no files":         {"PAYMENT_PROOF_MAX_FILES": "0"},
+		"too many files":   {"PAYMENT_PROOF_MAX_FILES": "11"},
+		"tiny size":        {"PAYMENT_PROOF_MAX_SIZE_KB": "1"},
+		"huge size":        {"PAYMENT_PROOF_MAX_SIZE_KB": "99999"},
+		"zero link ttl":    {"PAYMENT_PROOF_URL_TTL_MINUTES": "0"},
+		"huge link ttl":    {"PAYMENT_PROOF_URL_TTL_MINUTES": "5000"},
+		"relative api url": {"API_PUBLIC_URL": "api.example.vn"},
+		"slash on api url": {"API_PUBLIC_URL": "https://api.example.vn/"},
 	} {
 		if _, err := parse(vars); err == nil {
 			t.Errorf("%s must be refused", name)

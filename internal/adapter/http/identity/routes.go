@@ -27,4 +27,7 @@ func MountAuth(v1 *gin.RouterGroup, h *AuthHandler, auth httpx.Authenticator, li
 	signedIn.POST("/logout-all", h.LogoutAll)
 	signedIn.POST("/switch-role", limit("auth-switch-role", 10), h.SwitchRole)
 	signedIn.PUT("/password", limit("auth-password", 5), h.ChangePassword)
+
+	// Preferences belong to the account, not to the auth session group, and any role may change its own.
+	v1.PUT("/me/preferences", limit("me-preferences", 10), httpx.RequireAuth(auth), h.SetPreferences)
 }

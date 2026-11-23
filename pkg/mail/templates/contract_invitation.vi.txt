@@ -1,0 +1,12 @@
+Xin chào,
+
+{{.Landlord}} mời bạn thuê phòng {{.Room}}.
+
+Mở liên kết dưới đây để xem điều khoản và trả lời lời mời:
+
+{{.URL}}
+
+Lời mời có hiệu lực đến {{.Expires}}.
+{{if .OptOutURL}}
+Không muốn nhận lời mời thuê phòng qua email? Mở liên kết này: {{.OptOutURL}}
+{{end}}

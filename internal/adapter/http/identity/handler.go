@@ -141,6 +141,21 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	httpx.OK(c, userViewOf(user))
 }
 
+func (h *AuthHandler) SetPreferences(c *gin.Context) {
+	var req PreferencesRequest
+	if err := h.binder.JSON(c, &req); err != nil {
+		httpx.Fail(c, httpadapter.MapIdentityError(err))
+		return
+	}
+	p, _ := httpx.PrincipalOf(c)
+	user, err := h.uc.SetPreferences(c.Request.Context(), p, usecase.PreferencesInput{AcceptsInvitations: req.AcceptsInvitations})
+	if err != nil {
+		httpx.Fail(c, httpadapter.MapIdentityError(err))
+		return
+	}
+	httpx.OK(c, userViewOf(user))
+}
+
 func (h *AuthHandler) SwitchRole(c *gin.Context) {
 	var req SwitchRoleRequest
 	if err := h.binder.JSON(c, &req); err != nil {

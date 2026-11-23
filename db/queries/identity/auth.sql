@@ -33,7 +33,7 @@ FROM users WHERE email = @email::text;
 -- name: GetUserProfile :one
 -- The account with its ward and province, for the user object of the API.
 SELECT u.id, u.email, u.full_name, u.phone_number, u.status, u.address_detail, u.last_active_role,
-       u.terms_version, u.created_at,
+       u.terms_version, u.accepts_invitations, u.created_at,
        w.code AS ward_code, w.name AS ward_name,
        p.code AS province_code, p.name AS province_name
 FROM users u
@@ -128,3 +128,7 @@ UPDATE email_verification_tokens SET used_at = @now::timestamptz WHERE id = @id;
 
 -- name: LatestVerificationTokenAt :one
 SELECT created_at FROM email_verification_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1;
+
+-- name: SetUserAcceptsInvitations :exec
+-- Switches on or off whether landlords can find the account to invite it and whether invitation emails reach it.
+UPDATE users SET accepts_invitations = @accepts, updated_at = now() WHERE id = @id;

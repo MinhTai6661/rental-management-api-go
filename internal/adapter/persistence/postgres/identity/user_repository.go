@@ -49,7 +49,7 @@ func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (domain.User
 	return domain.UserProfile{
 		ID: row.ID, Email: row.Email, FullName: row.FullName, PhoneNumber: row.PhoneNumber, Status: row.Status,
 		AddressDetail: row.AddressDetail, LastActiveRole: row.LastActiveRole, TermsVersion: row.TermsVersion,
-		CreatedAt: row.CreatedAt, WardCode: row.WardCode, WardName: row.WardName,
+		AcceptsInvitations: row.AcceptsInvitations, CreatedAt: row.CreatedAt, WardCode: row.WardCode, WardName: row.WardName,
 		ProvinceCode: row.ProvinceCode, ProvinceName: row.ProvinceName,
 	}, nil
 }
@@ -87,6 +87,11 @@ func (r *UserRepository) MarkEmailVerified(ctx context.Context, id uuid.UUID, no
 // AddRole gives the account a role; it does nothing when it already holds it.
 func (r *UserRepository) AddRole(ctx context.Context, userID uuid.UUID, role string, now time.Time) error {
 	return postgres.Translate(postgres.Queries(ctx, r.pool).AddUserRole(ctx, sqlcgen.AddUserRoleParams{UserID: userID, RoleCode: role, Now: now}))
+}
+
+// SetAcceptsInvitations stores whether the account may be invited.
+func (r *UserRepository) SetAcceptsInvitations(ctx context.Context, id uuid.UUID, accepts bool) error {
+	return postgres.Translate(postgres.Queries(ctx, r.pool).SetUserAcceptsInvitations(ctx, sqlcgen.SetUserAcceptsInvitationsParams{ID: id, Accepts: accepts}))
 }
 
 // UpsertDemo creates a development account, or refreshes its password when the email exists, and returns its id.

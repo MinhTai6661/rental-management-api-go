@@ -1,0 +1,12 @@
+Hello,
+
+{{.Landlord}} offers you the room {{.Room}}.
+
+Open the link below to see the terms and answer the offer:
+
+{{.URL}}
+
+The offer is open until {{.Expires}}.
+{{if .OptOutURL}}
+Do not want room offers by email? Open this link: {{.OptOutURL}}
+{{end}}

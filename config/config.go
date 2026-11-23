@@ -3,17 +3,20 @@
 //
 // DATABASE_URL, REDIS_URL and JWT_SECRET are optional in the struct: when set they are validated, but nothing
 // fails here because they are missing. The code that needs them checks when it starts: RequireDatabase for
-// `rental-management migrate|seed`, RequireAPI (database, Redis and the signing key) for `rental-management api`.
+// `rental-management migrate|seed`, RequireAPI (database, Redis, the signing key and the data key) for `rental-management api`.
 package config
 
 import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"rental-management/pkg/secretbox"
 )
 
 // minJWTSecretBytes is the shortest HS256 signing key accepted.
@@ -81,9 +84,44 @@ type Config struct {
 	MediaMaxPerOwner           int    `env:"MEDIA_MAX_PER_OWNER" envDefault:"10"`
 	ImageProcessingConcurrency int    `env:"IMAGE_PROCESSING_CONCURRENCY" envDefault:"2"`
 
+	// StorageDriver chooses where the picture files live: "local" (MediaDir) or "s3" (an S3-compatible bucket:
+	// Cloudflare R2, AWS S3, SeaweedFS...). The S3_* settings are only read, and required, when it is "s3".
+	StorageDriver     string `env:"STORAGE_DRIVER" envDefault:"local"`
+	S3Endpoint        string `env:"S3_ENDPOINT"`
+	S3Bucket          string `env:"S3_BUCKET"`
+	S3AccessKeyID     string `env:"S3_ACCESS_KEY_ID"`
+	S3SecretAccessKey string `env:"S3_SECRET_ACCESS_KEY"`
+	S3Region          string `env:"S3_REGION" envDefault:"auto"`
+	S3PathStyle       bool   `env:"S3_PATH_STYLE" envDefault:"true"`
+
+	// DataEncryptionKey encrypts the secrets that must be read back later (the link of a bill, so the landlord can copy
+	// it again): 32 random bytes in standard base64, e.g. `openssl rand -base64 32`. Losing it makes the links already
+	// made unreadable (new ones are made when asked for); changing it does the same.
+	DataEncryptionKey string `env:"DATA_ENCRYPTION_KEY"`
+
+	// Bills: how many days after today a bill falls due when the landlord gives no date, how long the link of a bill
+	// works, and how many days before the due date the reminder goes out.
+	InvoiceDueDays      int `env:"INVOICE_DUE_DAYS" envDefault:"7"`
+	InvoiceShareTTLDays int `env:"INVOICE_SHARE_TTL_DAYS" envDefault:"90"`
+	InvoiceReminderDays int `env:"INVOICE_REMINDER_DAYS" envDefault:"3"`
+
+	// Payments: how many proof pictures (screenshots of the transfer) a payment may carry, how large each may be after
+	// the web app has shrunk it (KB), how long the signed link to a proof works (minutes), and the public address of the
+	// API the links of proofs point at.
+	PaymentProofMaxFiles      int    `env:"PAYMENT_PROOF_MAX_FILES" envDefault:"3"`
+	PaymentProofMaxSizeKB     int    `env:"PAYMENT_PROOF_MAX_SIZE_KB" envDefault:"1024"`
+	PaymentProofURLTTLMinutes int    `env:"PAYMENT_PROOF_URL_TTL_MINUTES" envDefault:"120"`
+	APIPublicURL              string `env:"API_PUBLIC_URL" envDefault:"http://localhost:8090"`
+
+	// InvitationTTLDays is how long an invitation (a room offered by link) can be answered; 1 to 90.
+	InvitationTTLDays int `env:"INVITATION_TTL_DAYS" envDefault:"7"`
+
 	// SeedDemoPassword is the password of the demo accounts `seed -demo` creates (development only).
 	SeedDemoPassword string `env:"SEED_DEMO_PASSWORD"`
 }
+
+// maxInvitationTTLDays is the longest an invitation may stay open.
+const maxInvitationTTLDays = 90
 
 // HasDatabase reports whether DATABASE_URL is set.
 func (c Config) HasDatabase() bool { return c.DatabaseURL != "" }
@@ -111,6 +149,9 @@ func (c Config) RequireAPI() error {
 	}
 	// Without SMTP the verification links would only be written to the log, which in production means anybody who can
 	// read the logs could verify (and take over) any address.
+	if !c.HasDataKey() {
+		missing = append(missing, "DATA_ENCRYPTION_KEY")
+	}
 	if c.Env == "production" && !c.HasSMTP() {
 		missing = append(missing, "SMTP_HOST")
 	}
@@ -125,6 +166,17 @@ func (c Config) HasSMTP() bool { return c.SMTPHost != "" }
 
 // HasRedis reports whether REDIS_URL is set.
 func (c Config) HasRedis() bool { return c.RedisURL != "" }
+
+// HasDataKey reports whether DATA_ENCRYPTION_KEY is set.
+func (c Config) HasDataKey() bool { return c.DataEncryptionKey != "" }
+
+// DataKey returns the decoded DATA_ENCRYPTION_KEY (validated when the configuration was read).
+func (c Config) DataKey() ([]byte, error) {
+	if !c.HasDataKey() {
+		return nil, fmt.Errorf("DATA_ENCRYPTION_KEY is required")
+	}
+	return secretbox.ParseKey(c.DataEncryptionKey)
+}
 
 // HasJWTSecret reports whether JWT_SECRET is set.
 func (c Config) HasJWTSecret() bool { return c.JWTSecret != "" }
@@ -243,8 +295,43 @@ func (c Config) validateBackends() error {
 	if err := c.validateMedia(); err != nil {
 		return err
 	}
+	if c.HasDataKey() {
+		if _, err := secretbox.ParseKey(c.DataEncryptionKey); err != nil {
+			return fmt.Errorf("DATA_ENCRYPTION_KEY %w", err)
+		}
+	}
+	for name, n := range map[string]int{
+		"INVOICE_DUE_DAYS": c.InvoiceDueDays, "INVOICE_SHARE_TTL_DAYS": c.InvoiceShareTTLDays, "INVOICE_REMINDER_DAYS": c.InvoiceReminderDays,
+	} {
+		if n < 1 || n > 3650 {
+			return fmt.Errorf("%s must be between 1 and 3650, got %d", name, n)
+		}
+	}
+	if err := c.validatePayments(); err != nil {
+		return err
+	}
+	if c.InvitationTTLDays < 1 || c.InvitationTTLDays > maxInvitationTTLDays {
+		return fmt.Errorf("INVITATION_TTL_DAYS must be between 1 and %d, got %d", maxInvitationTTLDays, c.InvitationTTLDays)
+	}
 	if c.SeedDemoPassword != "" && len(c.SeedDemoPassword) < minSeedPasswordBytes {
 		return fmt.Errorf("SEED_DEMO_PASSWORD must be at least %d characters", minSeedPasswordBytes)
+	}
+	return nil
+}
+
+// validatePayments checks the settings of the payment proofs.
+func (c Config) validatePayments() error {
+	if c.PaymentProofMaxFiles < 1 || c.PaymentProofMaxFiles > 10 {
+		return fmt.Errorf("PAYMENT_PROOF_MAX_FILES must be between 1 and 10, got %d", c.PaymentProofMaxFiles)
+	}
+	if c.PaymentProofMaxSizeKB < 16 || c.PaymentProofMaxSizeKB > 10240 {
+		return fmt.Errorf("PAYMENT_PROOF_MAX_SIZE_KB must be between 16 and 10240, got %d", c.PaymentProofMaxSizeKB)
+	}
+	if c.PaymentProofURLTTLMinutes < 1 || c.PaymentProofURLTTLMinutes > 1440 {
+		return fmt.Errorf("PAYMENT_PROOF_URL_TTL_MINUTES must be between 1 and 1440, got %d", c.PaymentProofURLTTLMinutes)
+	}
+	if err := checkBaseURL(c.APIPublicURL); err != nil {
+		return fmt.Errorf("API_PUBLIC_URL: %w", err)
 	}
 	return nil
 }
@@ -267,6 +354,39 @@ func (c Config) validateMedia() error {
 		if n <= 0 {
 			return fmt.Errorf("%s must be positive, got %d", name, n)
 		}
+	}
+	return c.validateStorage()
+}
+
+// validateStorage checks the storage driver; the S3 settings are required only for the s3 driver. The messages
+// name variables, never values, so the secret key cannot end up in a log.
+func (c Config) validateStorage() error {
+	switch c.StorageDriver {
+	case "local":
+		return nil
+	case "s3":
+	default:
+		return fmt.Errorf("STORAGE_DRIVER must be local or s3, got %q", c.StorageDriver)
+	}
+	var missing []string
+	for name, value := range map[string]string{
+		"S3_ENDPOINT":          c.S3Endpoint,
+		"S3_BUCKET":            c.S3Bucket,
+		"S3_ACCESS_KEY_ID":     c.S3AccessKeyID,
+		"S3_SECRET_ACCESS_KEY": c.S3SecretAccessKey,
+		"S3_REGION":            c.S3Region,
+	} {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("STORAGE_DRIVER=s3 needs %s", strings.Join(missing, ", "))
+	}
+	if u, err := url.Parse(c.S3Endpoint); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+		return fmt.Errorf("S3_ENDPOINT is not an http(s) address like http://localhost:8333 or https://<account>.r2.cloudflarestorage.com")
 	}
 	return nil
 }

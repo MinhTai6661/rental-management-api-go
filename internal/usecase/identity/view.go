@@ -27,6 +27,7 @@ func (a *Auth) userView(ctx context.Context, id uuid.UUID, role string) (UserVie
 		ID: profile.ID.String(), Email: profile.Email, FullName: profile.FullName, PhoneNumber: profile.PhoneNumber,
 		Status: profile.Status, AddressDetail: profile.AddressDetail, Roles: held.Roles, ActiveRole: role,
 		Permissions: sortedPermissionCodes(permissions), CreatedAt: profile.CreatedAt.UTC(),
+		AcceptsInvitations: profile.AcceptsInvitations,
 		Terms: TermsView{
 			AcceptedVersion: profile.TermsVersion,
 			CurrentVersion:  a.opts.TermsVersion,

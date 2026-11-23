@@ -30,6 +30,7 @@ type UserRepository interface {
 	SetLastActiveRole(ctx context.Context, id uuid.UUID, role string, now time.Time) error
 	MarkEmailVerified(ctx context.Context, id uuid.UUID, now time.Time) error
 	AddRole(ctx context.Context, userID uuid.UUID, role string, now time.Time) error
+	SetAcceptsInvitations(ctx context.Context, id uuid.UUID, accepts bool) error
 }
 
 // DemoUserRepository is what the demo accounts need from the user store.

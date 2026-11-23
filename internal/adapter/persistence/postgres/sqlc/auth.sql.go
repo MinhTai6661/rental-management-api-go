@@ -234,7 +234,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 
 const getUserProfile = `-- name: GetUserProfile :one
 SELECT u.id, u.email, u.full_name, u.phone_number, u.status, u.address_detail, u.last_active_role,
-       u.terms_version, u.created_at,
+       u.terms_version, u.accepts_invitations, u.created_at,
        w.code AS ward_code, w.name AS ward_name,
        p.code AS province_code, p.name AS province_name
 FROM users u
@@ -244,19 +244,20 @@ WHERE u.id = $1
 `
 
 type GetUserProfileRow struct {
-	ID             uuid.UUID
-	Email          *string
-	FullName       string
-	PhoneNumber    *string
-	Status         string
-	AddressDetail  *string
-	LastActiveRole *string
-	TermsVersion   *string
-	CreatedAt      time.Time
-	WardCode       *int32
-	WardName       *string
-	ProvinceCode   *int32
-	ProvinceName   *string
+	ID                 uuid.UUID
+	Email              *string
+	FullName           string
+	PhoneNumber        *string
+	Status             string
+	AddressDetail      *string
+	LastActiveRole     *string
+	TermsVersion       *string
+	AcceptsInvitations bool
+	CreatedAt          time.Time
+	WardCode           *int32
+	WardName           *string
+	ProvinceCode       *int32
+	ProvinceName       *string
 }
 
 // The account with its ward and province, for the user object of the API.
@@ -272,6 +273,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, id uuid.UUID) (GetUserProf
 		&i.AddressDetail,
 		&i.LastActiveRole,
 		&i.TermsVersion,
+		&i.AcceptsInvitations,
 		&i.CreatedAt,
 		&i.WardCode,
 		&i.WardName,
@@ -513,6 +515,21 @@ type SetLastActiveRoleParams struct {
 
 func (q *Queries) SetLastActiveRole(ctx context.Context, arg SetLastActiveRoleParams) error {
 	_, err := q.db.Exec(ctx, setLastActiveRole, arg.Role, arg.Now, arg.ID)
+	return err
+}
+
+const setUserAcceptsInvitations = `-- name: SetUserAcceptsInvitations :exec
+UPDATE users SET accepts_invitations = $1, updated_at = now() WHERE id = $2
+`
+
+type SetUserAcceptsInvitationsParams struct {
+	Accepts bool
+	ID      uuid.UUID
+}
+
+// Switches on or off whether landlords can find the account to invite it and whether invitation emails reach it.
+func (q *Queries) SetUserAcceptsInvitations(ctx context.Context, arg SetUserAcceptsInvitationsParams) error {
+	_, err := q.db.Exec(ctx, setUserAcceptsInvitations, arg.Accepts, arg.ID)
 	return err
 }
 

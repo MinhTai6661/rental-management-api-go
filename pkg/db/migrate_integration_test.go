@@ -48,7 +48,7 @@ func TestMigrateUpDownUpRoundTrip(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 	applied := count()
-	if applied != 14 || !strings.Contains(out.String(), "00004_property.sql") {
+	if applied != 25 || !strings.Contains(out.String(), "00010_payment.sql") {
 		t.Fatalf("up created %d tables, output:\n%s", applied, out.String())
 	}
 
@@ -59,7 +59,7 @@ func TestMigrateUpDownUpRoundTrip(t *testing.T) {
 	}
 
 	// Roll back every migration: the database must be empty again.
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 10; i++ {
 		if err := db.Migrate(ctx, pool, "down", &out); err != nil {
 			t.Fatalf("down %d: %v", i+1, err)
 		}
@@ -84,8 +84,8 @@ func TestMigrateStatusAndUnknownCommand(t *testing.T) {
 	if err := db.Migrate(ctx, pool, "status", &out); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out.String(), "pending") != 4 {
-		t.Errorf("all four migrations should be pending:\n%s", out.String())
+	if strings.Count(out.String(), "pending") != 10 {
+		t.Errorf("all ten migrations should be pending:\n%s", out.String())
 	}
 
 	if err := db.Migrate(ctx, pool, "sideways", &out); err == nil {

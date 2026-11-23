@@ -76,3 +76,49 @@ func TestOnlySuperAdminManagesRoles(t *testing.T) {
 		}
 	}
 }
+
+// The contract routes ask for these permissions (see adapter/http/contract/routes.go): landlord and tenant must hold
+// exactly what the Laravel RoleSeeder gives them, and nobody else may.
+func TestContractPermissionsFollowTheRoles(t *testing.T) {
+	granted := RolePermissions()
+	set := func(role string) map[string]struct{} {
+		out := map[string]struct{}{}
+		for _, code := range granted[role] {
+			out[code] = struct{}{}
+		}
+		return out
+	}
+	landlord, tenant := set(authz.RoleLandlord), set(authz.RoleTenant)
+	for _, perm := range []string{"contracts.view", "contracts.create", "contracts.update", "contracts.delete"} {
+		if !authz.HasPermission(landlord, perm) {
+			t.Errorf("landlord must have %s", perm)
+		}
+	}
+	for _, perm := range []string{"contracts.view", "contracts.create", "contracts.delete", "contracts.request_cancel"} {
+		if !authz.HasPermission(tenant, perm) {
+			t.Errorf("tenant must have %s", perm)
+		}
+	}
+	// A tenant never edits a contract; the routes of the landlord check the role as well.
+	if authz.HasPermission(tenant, "contracts.update") {
+		t.Error("tenant must not have contracts.update")
+	}
+}
+
+// The plan routes ask for subscriptions.manage (see adapter/http/plan/routes.go); the routes of the catalog check the
+// super admin role on top. Laravel's RoleSeeder gives it to the two staff roles and to nobody else: a landlord's or a
+// tenant's own plan needs no permission.
+func TestPlanPermissionFollowsTheStaffRoles(t *testing.T) {
+	granted := RolePermissions()
+	holders := map[string]bool{}
+	for role, codes := range granted {
+		for _, code := range codes {
+			if code == "subscriptions.manage" {
+				holders[role] = true
+			}
+		}
+	}
+	if len(holders) != 2 || !holders[authz.RoleAdmin] || !holders[authz.RoleSuperAdmin] {
+		t.Errorf("subscriptions.manage is held by %v, want admin and super_admin only", holders)
+	}
+}

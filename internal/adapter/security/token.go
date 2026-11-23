@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -129,3 +130,23 @@ func (OpaqueTokens) New() (string, []byte, error) { return NewOpaqueToken() }
 
 // Hash is the SHA-256 of a token as sent by a client.
 func (OpaqueTokens) Hash(raw string) []byte { return HashToken(raw) }
+
+// shareTokenBytes makes a token of 64 characters (48 bytes in unpadded base64url).
+const shareTokenBytes = 48
+
+// ShareTokens is the implementation of the port that makes the secrets of share links: the token goes into the link,
+// and only its hash (SHA-256 in hex, 64 characters) is looked up in the database.
+type ShareTokens struct{}
+
+// New returns a random token of 64 characters and the hash to look it up by.
+func (ShareTokens) New() (token, hash string, err error) {
+	b := make([]byte, shareTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", fmt.Errorf("make share token: %w", err)
+	}
+	token = base64.RawURLEncoding.EncodeToString(b)
+	return token, ShareTokens{}.Hash(token), nil
+}
+
+// Hash is the hash of a token as a client sends it.
+func (ShareTokens) Hash(token string) string { return hex.EncodeToString(HashToken(token)) }

@@ -54,7 +54,10 @@ func (r *Rooms) deleteRooms(ctx context.Context, landlordID uuid.UUID, ids []uui
 		if len(deletable) == 0 {
 			return nil
 		}
-		return r.rooms.SoftDelete(ctx, landlordID, deletable)
+		if err := r.rooms.SoftDelete(ctx, landlordID, deletable); err != nil {
+			return err
+		}
+		return r.observer.Deleted(ctx, deletable)
 	})
 	if err != nil {
 		return BulkResult{}, err

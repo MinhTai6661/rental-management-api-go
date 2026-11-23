@@ -61,7 +61,14 @@ type UserView struct {
 	ActiveRole    string
 	Permissions   []string
 	Terms         TermsView
-	CreatedAt     time.Time
+	// AcceptsInvitations is false when the person switched invitations off.
+	AcceptsInvitations bool
+	CreatedAt          time.Time
+}
+
+// PreferencesInput is what a person changes in their preferences; a nil field stays as it is.
+type PreferencesInput struct {
+	AcceptsInvitations *bool
 }
 
 // WardView is the ward (and its province) of the user's address.

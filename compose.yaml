@@ -1,6 +1,7 @@
-# Development stack of the Go backend: the API with live reload, its own Postgres and Redis, and Mailpit.
+# Development stack of the Go backend: the API with live reload, its own Postgres and Redis, Mailpit and a local
+# S3-compatible object store (SeaweedFS) that stands in for Cloudflare R2.
 # It shares nothing with the Laravel stack (myrent_*), so every host port here differs from that one:
-#   api 8090, postgres 5442, redis 6389, mailpit SMTP 1026 and UI 8026.
+#   api 8090, postgres 5442, redis 6389, mailpit SMTP 1026 and UI 8026, seaweedfs S3 8333 and master UI 9333.
 # No image is built: the API runs from the official golang image with the source mounted.
 # No .env file is needed, the defaults below are for development only.
 name: rental-management
@@ -21,6 +22,8 @@ services:
       DATABASE_URL: postgres://rental_management:rental_management@postgres:5432/rental_management_dev?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
+      # Encrypts the links of bills (32 bytes in base64). Development only: make a real one with `openssl rand -base64 32`.
+      DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       # Password of the demo accounts `make seed-demo` creates. Development only.
       SEED_DEMO_PASSWORD: demo-password-123
       SMTP_HOST: mailpit
@@ -29,6 +32,16 @@ services:
       CORS_ALLOWED_ORIGINS: http://localhost:2001
       MEDIA_DIR: /data/media
       MEDIA_PUBLIC_BASE_URL: http://localhost:8090/v1/media
+      # Pictures on disk (MEDIA_DIR) by default. To keep them in the local SeaweedFS bucket instead, uncomment these
+      # lines (run `make migrate-media` first to copy the existing pictures); the bucket is made by seaweedfs-init
+      # and the keys are those of docker/seaweedfs/s3.json. Pictures are still served through GET /v1/media/*.
+      # STORAGE_DRIVER: s3
+      # S3_ENDPOINT: http://seaweedfs:8333
+      # S3_BUCKET: rental-management-media
+      # S3_ACCESS_KEY_ID: dev-access-key
+      # S3_SECRET_ACCESS_KEY: dev-secret-key-change-me
+      # S3_REGION: us-east-1
+      # S3_PATH_STYLE: "true"
     env_file:
       - path: .env
         required: false
@@ -98,6 +111,42 @@ services:
       - rental_management_network
     restart: unless-stopped
 
+  # S3-compatible object store for development (the API keeps pictures on disk unless STORAGE_DRIVER=s3 is set, see the commented lines of the api service).
+  # Endpoint http://localhost:8333, path-style addressing, region "auto"/"us-east-1".
+  # Development credentials live in docker/seaweedfs/s3.json: access key dev-access-key.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: rental_management_seaweedfs
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-master.volumeSizeLimitMB=1024"]
+    ports:
+      - "${SEAWEEDFS_S3_PORT:-8333}:8333"
+      - "${SEAWEEDFS_MASTER_PORT:-9333}:9333"
+    volumes:
+      - rental-management-seaweedfs:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      # SeaweedFS listens on the container address, not on localhost.
+      test: ["CMD-SHELL", "H=$$(hostname -i | cut -d' ' -f1); wget -q --spider http://$$H:9333/cluster/status && wget -q --spider http://$$H:8333/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - rental_management_network
+    restart: unless-stopped
+
+  # One-shot: creates the bucket the pictures will go to, then exits. Safe to run again.
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:latest
+    container_name: rental_management_seaweedfs_init
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 's3.bucket.create -name rental-management-media' | weed shell -master=seaweedfs:9333"]
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    networks:
+      - rental_management_network
+    restart: "no"
+
 networks:
   rental_management_network:
     name: rental_management_network
@@ -107,6 +156,8 @@ volumes:
   rental-management-redis:
   # Pictures of rooms and buildings (MEDIA_DIR of the api container).
   rental-management-media:
+  # Objects of the local S3 store (SeaweedFS).
+  rental-management-seaweedfs:
   # The Go caches are the same volumes the Makefile uses, so compilation is shared.
   rental-management-go-mod:
     name: rental-management-go-mod

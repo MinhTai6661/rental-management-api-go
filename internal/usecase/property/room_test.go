@@ -123,6 +123,9 @@ func TestBulkDeleteRoomsReportsTheBlockedOnes(t *testing.T) {
 	if err != nil || len(res.Failed) != 1 || !is(res.Failed[0].Err, domain.ErrRoomHasListing) || !slices.Equal(w.rooms.deleted, []uuid.UUID{b}) {
 		t.Fatalf("%+v %v", res, err)
 	}
+	if len(w.observer.deleted) != 1 || !slices.Equal(w.observer.deleted[0], []uuid.UUID{b}) {
+		t.Errorf("the observer must hear about the rooms that were deleted, got %v", w.observer.deleted)
+	}
 	if err := w.roomUC().Delete(context.Background(), w.owner, a); !is(err, domain.ErrNotFound) {
 		t.Errorf("a path id that is not in the answer is not found: %v", err)
 	}

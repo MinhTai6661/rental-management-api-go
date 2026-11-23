@@ -84,6 +84,12 @@ func (f fakeGuards) Blockers(context.Context, []uuid.UUID) (map[uuid.UUID]domain
 type recorder struct {
 	statuses []domain.StatusChange
 	content  [][]uuid.UUID
+	deleted  [][]uuid.UUID
+}
+
+func (r *recorder) Deleted(_ context.Context, ids []uuid.UUID) error {
+	r.deleted = append(r.deleted, ids)
+	return nil
 }
 
 func (r *recorder) StatusChanged(_ context.Context, changes []domain.StatusChange) error {
@@ -146,6 +152,10 @@ func (s *swapObserver) StatusChanged(ctx context.Context, c []domain.StatusChang
 
 func (s *swapObserver) ContentChanged(ctx context.Context, ids []uuid.UUID) error {
 	return s.get().ContentChanged(ctx, ids)
+}
+
+func (s *swapObserver) Deleted(ctx context.Context, ids []uuid.UUID) error {
+	return s.get().Deleted(ctx, ids)
 }
 
 // propertyEnv is one test's stack: a fresh database, two landlords, a tenant and an admin, an in-memory file store,

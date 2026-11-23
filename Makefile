@@ -16,13 +16,27 @@ GO = $(DOCKER_RUN) $(GO_IMAGE) go
 COMPOSE_NETWORK ?= rental_management_network
 DEV_DATABASE_URL ?= postgres://rental_management:rental_management@postgres:5432/rental_management_dev?sslmode=disable
 SEED_DEMO_PASSWORD ?= demo-password-123
+# Development only (the same value as compose.yaml): the key that encrypts the links of bills. Never use it elsewhere.
+DEV_DATA_ENCRYPTION_KEY ?= MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 RENTAL_MANAGEMENT = docker run --rm --network $(COMPOSE_NETWORK) -e DATABASE_URL="$(DEV_DATABASE_URL)" -e APP_ENV=local \
-	-e SEED_DEMO_PASSWORD="$(SEED_DEMO_PASSWORD)" \
+	-e SEED_DEMO_PASSWORD="$(SEED_DEMO_PASSWORD)" -e DATA_ENCRYPTION_KEY="$(DEV_DATA_ENCRYPTION_KEY)" \
 	-v "$(CURDIR)":/src -w /src -v rental-management-go-mod:/go/pkg/mod -v rental-management-go-build:/root/.cache/go-build \
 	$(GO_IMAGE) go run ./cmd/rental-management
 
+# `make migrate-media` copies the pictures of the compose media volume into the dev SeaweedFS bucket (the keys are the
+# development ones of docker/seaweedfs/s3.json). To fill R2 or AWS instead, set STORAGE_DRIVER/S3_* in the shell, e.g.
+#   S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... \
+#   S3_REGION=auto S3_PATH_STYLE=false COMPOSE_NETWORK=bridge make migrate-media
+MEDIA_VOLUME      ?= rental-management_rental-management-media
+S3_ENDPOINT       ?= http://seaweedfs:8333
+S3_BUCKET         ?= rental-management-media
+S3_ACCESS_KEY_ID  ?= dev-access-key
+S3_SECRET_ACCESS_KEY ?= dev-secret-key-change-me
+S3_REGION         ?= us-east-1
+S3_PATH_STYLE     ?= true
+
 .PHONY: help build test test-integration vet fmt fmt-check lint tidy sqlc dev check hooks up down logs migrate \
-	migrate-down migrate-status seed seed-demo fetch-locations
+	migrate-down migrate-status seed seed-demo expire-subscriptions send-invoices send-reminders migrate-media fetch-locations
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "%-8s %s\n", $$1, $$2}'
@@ -79,11 +93,27 @@ migrate-down: ## Roll back the latest migration of the dev database
 migrate-status: ## Show which migrations are applied
 	$(RENTAL_MANAGEMENT) migrate status
 
-seed: ## Load roles, permissions, provinces and wards into the dev database
+seed: ## Load roles, permissions, service plans, provinces and wards into the dev database
 	$(RENTAL_MANAGEMENT) seed
 
 seed-demo: ## Also create the demo accounts (password: SEED_DEMO_PASSWORD, default for the dev stack: see compose.yaml)
 	$(RENTAL_MANAGEMENT) seed -demo
+
+expire-subscriptions: ## Mark the subscriptions past their end as expired (idempotent; run it daily from cron)
+	$(RENTAL_MANAGEMENT) subscriptions-expire
+
+send-invoices: ## Send the bills of plans with automatic invoicing (idempotent; run it daily from cron)
+	$(RENTAL_MANAGEMENT) invoices-send-automatic
+
+send-reminders: ## Remind people of bills about to fall due or overdue (once per bill; run it daily from cron)
+	$(RENTAL_MANAGEMENT) invoices-send-reminders
+
+migrate-media: ## Copy the local pictures into the S3 bucket (idempotent, never deletes the local files)
+	docker run --rm --network $(COMPOSE_NETWORK) -e APP_ENV=local -e STORAGE_DRIVER=s3 \
+		-e S3_ENDPOINT -e S3_BUCKET -e S3_ACCESS_KEY_ID -e S3_SECRET_ACCESS_KEY -e S3_REGION -e S3_PATH_STYLE \
+		-e MEDIA_DIR=/data/media -v $(MEDIA_VOLUME):/data/media:ro \
+		-v "$(CURDIR)":/src -w /src -v rental-management-go-mod:/go/pkg/mod -v rental-management-go-build:/root/.cache/go-build \
+		$(GO_IMAGE) go run ./cmd/rental-management media-upload
 
 fetch-locations: ## Download the provinces and wards snapshot again (network; only when the divisions change)
 	$(GO) run ./tools/fetchlocations

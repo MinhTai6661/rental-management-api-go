@@ -35,13 +35,15 @@ func StartPostgres(ctx context.Context) (*Postgres, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := postgres.Run(ctx, "postgres:18-alpine",
-		postgres.WithDatabase(adminDatabase),
-		postgres.WithUsername(postgresUser),
-		postgres.WithPassword(password),
-		testcontainers.WithLabels(map[string]string{Label: "1"}),
-		postgres.BasicWaitStrategies(),
-	)
+	ctr, err := retryStart(ctx, func(ctx context.Context) (*postgres.PostgresContainer, error) {
+		return postgres.Run(ctx, "postgres:18-alpine",
+			postgres.WithDatabase(adminDatabase),
+			postgres.WithUsername(postgresUser),
+			postgres.WithPassword(password),
+			testcontainers.WithLabels(map[string]string{Label: "1"}),
+			postgres.BasicWaitStrategies(),
+		)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start postgres container: %w", err)
 	}

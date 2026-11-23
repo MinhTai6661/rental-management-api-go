@@ -195,6 +195,8 @@ func (NoGuards) Blockers(context.Context, []uuid.UUID) (map[uuid.UUID]domain.Blo
 type RoomObserver interface {
 	StatusChanged(ctx context.Context, changes []domain.StatusChange) error
 	ContentChanged(ctx context.Context, roomIDs []uuid.UUID) error
+	// Deleted tells that rooms were deleted (a blank contract of a deleted room ends).
+	Deleted(ctx context.Context, roomIDs []uuid.UUID) error
 }
 
 // NoObserver is the default: nobody listens.
@@ -202,6 +204,7 @@ type NoObserver struct{}
 
 func (NoObserver) StatusChanged(context.Context, []domain.StatusChange) error { return nil }
 func (NoObserver) ContentChanged(context.Context, []uuid.UUID) error          { return nil }
+func (NoObserver) Deleted(context.Context, []uuid.UUID) error                 { return nil }
 
 // Clock tells the time.
 type Clock interface {

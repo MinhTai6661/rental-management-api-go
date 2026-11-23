@@ -22,7 +22,9 @@ type Redis struct {
 
 // StartRedis starts the container. Call Terminate when the package's tests are done.
 func StartRedis(ctx context.Context) (*Redis, error) {
-	ctr, err := tcredis.Run(ctx, "redis:8-alpine", testcontainers.WithLabels(map[string]string{Label: "1"}))
+	ctr, err := retryStart(ctx, func(ctx context.Context) (*tcredis.RedisContainer, error) {
+		return tcredis.Run(ctx, "redis:8-alpine", testcontainers.WithLabels(map[string]string{Label: "1"}))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start redis container: %w", err)
 	}

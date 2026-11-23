@@ -1,0 +1,482 @@
+[
+    {
+        "start": "2026-01-31",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-02-28"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-03-31"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-04-30"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-01-31"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-02-01"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-02-10"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-03-02"
+    },
+    {
+        "start": "2026-01-31",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-01-31"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-02-28"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-03-30"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-04-30"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-01-30"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-01-31"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-02-09"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-03-01"
+    },
+    {
+        "start": "2026-01-30",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-01-30"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-02-28"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-03-29"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-04-29"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-01-29"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-01-30"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-02-08"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-02-28"
+    },
+    {
+        "start": "2026-01-29",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-01-29"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2024-03-29"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2024-04-29"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2024-05-29"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2025-02-28"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2024-03-01"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2024-03-10"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2024-03-30"
+    },
+    {
+        "start": "2024-02-29",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2025-02-28"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2027-01-31"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2027-02-28"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2027-03-31"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-12-31"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2027-01-01"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2027-01-10"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2027-01-30"
+    },
+    {
+        "start": "2026-12-31",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-12-31"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-04-30"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-05-31"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-06-30"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-03-31"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-04-01"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-04-10"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-04-30"
+    },
+    {
+        "start": "2026-03-31",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-03-31"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-06-15"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-07-15"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-08-15"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-05-15"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-05-16"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-05-25"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-06-14"
+    },
+    {
+        "start": "2026-05-15",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-05-15"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2026-03-28"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2026-04-28"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2026-05-28"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2027-02-28"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2026-03-01"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2026-03-10"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2026-03-30"
+    },
+    {
+        "start": "2026-02-28",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2027-02-28"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2027-09-30"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2027-10-31"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2027-11-30"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2028-08-31"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2027-09-01"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2027-09-10"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2027-09-30"
+    },
+    {
+        "start": "2027-08-31",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2028-08-30"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 1,
+        "unit": "month",
+        "expected": "2028-03-29"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 2,
+        "unit": "month",
+        "expected": "2028-04-29"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 3,
+        "unit": "month",
+        "expected": "2028-05-29"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 12,
+        "unit": "month",
+        "expected": "2029-02-28"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 1,
+        "unit": "day",
+        "expected": "2028-03-01"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 10,
+        "unit": "day",
+        "expected": "2028-03-10"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 30,
+        "unit": "day",
+        "expected": "2028-03-30"
+    },
+    {
+        "start": "2028-02-29",
+        "amount": 365,
+        "unit": "day",
+        "expected": "2029-02-28"
+    }
+]

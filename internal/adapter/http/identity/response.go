@@ -22,7 +22,9 @@ type UserView struct {
 	ActiveRole    string                `json:"active_role"`
 	Permissions   []string              `json:"permissions"`
 	Terms         TermsView             `json:"terms"`
-	CreatedAt     time.Time             `json:"created_at"`
+	// AcceptsInvitations is false when the person asked not to be invited.
+	AcceptsInvitations bool      `json:"accepts_invitations"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // TermsView tells whether the user must accept the terms of use again.
@@ -60,7 +62,8 @@ func userViewOf(u usecase.UserView) UserView {
 			AcceptedVersion: u.Terms.AcceptedVersion, CurrentVersion: u.Terms.CurrentVersion,
 			NeedsAcceptance: u.Terms.NeedsAcceptance,
 		},
-		CreatedAt: u.CreatedAt,
+		AcceptsInvitations: u.AcceptsInvitations,
+		CreatedAt:          u.CreatedAt,
 	}
 	if u.Ward != nil {
 		view.Ward = &httpadapter.WardView{

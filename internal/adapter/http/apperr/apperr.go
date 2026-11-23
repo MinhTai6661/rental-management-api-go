@@ -50,38 +50,99 @@ const (
 	CodeMediaLimitReached    = "property.media_limit_reached"
 	CodeBuildingLimit        = "plan.building_limit_reached"
 	CodeRoomLimit            = "plan.room_limit_reached"
-	CodeServerInternal       = "server.internal"
-	RuleRequired             = "required"
-	RuleEmail                = "email"
-	RuleMinString            = "min_string"
-	RuleMaxString            = "max_string"
-	RuleMinNumber            = "min_number"
-	RuleMaxNumber            = "max_number"
-	RuleInteger              = "integer"
-	RuleUUID                 = "uuid"
-	RuleOneOf                = "oneof"
-	RuleAccepted             = "accepted"
-	RuleUnique               = "unique"
-	RuleExists               = "exists"
-	RuleRoleNotHeld          = "role_not_held"
-	RulePasswordIncorrect    = "password_incorrect"
-	RulePasswordSame         = "password_same"
-	RuleMinItems             = "min_items"
-	RuleMaxItems             = "max_items"
-	RuleDistinct             = "distinct"
-	RuleImageType            = "image_type"
-	RuleImageDimensions      = "image_dimensions"
-	RuleImageCorrupt         = "image_corrupt"
-	RuleFileTooLarge         = "file_too_large"
-	RuleBuildingPriceMissing = "building_price_missing"
-	RuleBuildingPriceInUse   = "building_price_in_use"
-	RuleRangeInvalid         = "range_invalid"
-	RuleRangeTooMany         = "range_too_many"
-	RuleRangeNameTooLong     = "range_name_too_long"
-	RuleNamesTaken           = "names_taken"
-	RuleSingleCover          = "single_cover"
-	RuleRentalPeriodPair     = "rental_period_pair"
-	RuleLTEField             = "lte_field"
+	CodeContractTransition   = "contract.invalid_transition"
+	CodeContractRoomOccupied = "contract.room_occupied"
+	CodeContractNotVacant    = "contract.room_not_vacant"
+	CodeContractNotListed    = "contract.room_not_listed"
+	CodeContractRegistered   = "contract.already_registered"
+	CodeContractOwnRoom      = "contract.own_room"
+	CodeContractCancelDenied = "contract.cancellation_not_allowed"
+	CodeContractNotDeletable = "contract.not_deletable"
+	CodeContractLimit        = "plan.contract_limit_reached"
+	CodeRegistrationLimit    = "plan.registration_limit_reached"
+	CodeListingTransition    = "listing.invalid_transition"
+	CodeListingRoomListed    = "listing.room_already_listed"
+	CodeListingUnpublish     = "listing.unpublish_first"
+	CodeListingLimit         = "plan.listing_limit_reached"
+	CodePlanWrongAudience    = "plan.wrong_audience"
+	CodePlanInactive         = "plan.inactive"
+	CodePlanAlreadyOn        = "plan.already_on_plan"
+	CodePlanNotPending       = "plan.subscription_not_pending"
+	CodeInvoiceNotRunning    = "invoice.contract_not_running"
+	CodeInvoiceAlreadyPaid   = "invoice.already_paid"
+	CodeInvoiceSendFirst     = "invoice.send_first"
+	CodeInvoiceLocked        = "invoice.locked"
+	CodeInvoiceReviewPending = "invoice.review_pending_first"
+	CodeInvoiceLinkNeedsSent = "invoice.link_needs_sent"
+	CodeInvoiceLinkInvalid   = "invoice.link_invalid"
+	CodePaymentNotPayable    = "payment.invoice_not_payable"
+	CodePaymentReviewed      = "payment.already_reviewed"
+
+	CodeInvitationInvalid         = "invitation.invalid"
+	CodeInvitationNotPending      = "invitation.not_pending"
+	CodeInvitationLinkUnavailable = "invitation.link_unavailable"
+	CodeInvitationOwnOffer        = "invitation.own_offer"
+	CodeServerInternal            = "server.internal"
+	RuleRequired                  = "required"
+	RuleEmail                     = "email"
+	RuleMinString                 = "min_string"
+	RuleMaxString                 = "max_string"
+	RuleMinNumber                 = "min_number"
+	RuleMaxNumber                 = "max_number"
+	RuleInteger                   = "integer"
+	RuleUUID                      = "uuid"
+	RuleOneOf                     = "oneof"
+	RuleAccepted                  = "accepted"
+	RuleUnique                    = "unique"
+	RuleExists                    = "exists"
+	RuleRoleNotHeld               = "role_not_held"
+	RulePasswordIncorrect         = "password_incorrect"
+	RulePasswordSame              = "password_same"
+	RuleMinItems                  = "min_items"
+	RuleMaxItems                  = "max_items"
+	RuleDistinct                  = "distinct"
+	RuleImageType                 = "image_type"
+	RuleImageDimensions           = "image_dimensions"
+	RuleImageCorrupt              = "image_corrupt"
+	RuleFileTooLarge              = "file_too_large"
+	RuleBuildingPriceMissing      = "building_price_missing"
+	RuleBuildingPriceInUse        = "building_price_in_use"
+	RuleRangeInvalid              = "range_invalid"
+	RuleRangeTooMany              = "range_too_many"
+	RuleRangeNameTooLong          = "range_name_too_long"
+	RuleNamesTaken                = "names_taken"
+	RuleSingleCover               = "single_cover"
+	RuleRentalPeriodPair          = "rental_period_pair"
+	RuleLTEField                  = "lte_field"
+	RuleDate                      = "date"
+	RuleAfterStartDate            = "after_start_date"
+	RuleDateNotPast               = "date_not_past"
+	RuleBelowMinMonths            = "below_minimum_months"
+	RuleBelowMinDays              = "below_minimum_days"
+	RuleFormat                    = "format"
+	RuleDateTime                  = "datetime"
+
+	RuleUnknownService          = "unknown_service"
+	RulePreviousReadingRequired = "previous_reading_required"
+	RuleReadingLowerThanPrev    = "reading_lower_than_previous"
+	RuleNewReadingRequired      = "new_reading_required"
+	RuleNothingToBill           = "nothing_to_bill"
+	RuleDayNeedsEnd             = "day_needs_end"
+	RuleInvalidPeriod           = "invalid_period"
+	RulePeriodBilled            = "period_billed"
+	RulePaymentLabelChars       = "payment_label_chars"
+
+	RuleRecipientInvalid  = "recipient_invalid"
+	RuleOwnEmail          = "own_email"
+	RuleRecipientMismatch = "recipient_mismatch"
+	RuleRequiredWithout   = "required_without"
+	RuleLinkInvalid       = "link_invalid"
+
+	RuleAmountExceedsRemaining = "amount_exceeds_remaining"
+	RuleMethodNotAccepted      = "method_not_accepted"
+	RuleDateNotFuture          = "date_not_future"
+	RuleAccountFormat          = "account_number_format"
+	RulePhoneFormat            = "phone_format"
 )
 
 // Codes lists every error code; each needs a translation under "errors.<code>".
@@ -91,7 +152,14 @@ func Codes() []string {
 		CodeUnauthenticated, CodeInvalidCredentials, CodeRefreshInvalid, CodeAccountInactive, CodeForbidden,
 		CodeEmailUnverified, CodeVerificationInvalid, CodeProvinceNotFound, CodeResourceNotFound, CodeRouteNotFound, CodeMethodNotAllowed,
 		CodeServerBusy, CodeServerInternal, CodeBuildingHasRooms, CodeRoomHasContract, CodeRoomHasListing,
-		CodeRoomStatusLocked, CodeMediaLimitReached, CodeBuildingLimit, CodeRoomLimit,
+		CodeRoomStatusLocked, CodeMediaLimitReached, CodeBuildingLimit, CodeRoomLimit, CodeContractTransition,
+		CodeContractRoomOccupied, CodeContractNotVacant, CodeContractRegistered, CodeContractOwnRoom, CodeContractCancelDenied,
+		CodeContractNotDeletable, CodeContractLimit, CodeRegistrationLimit, CodePlanWrongAudience, CodePlanInactive,
+		CodePlanAlreadyOn, CodePlanNotPending, CodeContractNotListed, CodeListingTransition, CodeListingRoomListed,
+		CodeListingUnpublish, CodeListingLimit, CodeInvoiceNotRunning, CodeInvoiceAlreadyPaid, CodeInvoiceSendFirst,
+		CodeInvoiceLocked, CodeInvoiceReviewPending, CodeInvoiceLinkNeedsSent, CodeInvoiceLinkInvalid,
+		CodeInvitationInvalid, CodeInvitationNotPending, CodeInvitationLinkUnavailable, CodeInvitationOwnOffer,
+		CodePaymentNotPayable, CodePaymentReviewed,
 	}
 }
 
@@ -103,6 +171,11 @@ func Rules() []string {
 		RulePasswordSame, RuleMinItems, RuleMaxItems, RuleDistinct, RuleImageType, RuleImageDimensions,
 		RuleImageCorrupt, RuleFileTooLarge, RuleBuildingPriceMissing, RuleBuildingPriceInUse, RuleRangeInvalid,
 		RuleRangeTooMany, RuleRangeNameTooLong, RuleNamesTaken, RuleSingleCover, RuleRentalPeriodPair, RuleLTEField,
+		RuleDate, RuleAfterStartDate, RuleDateNotPast, RuleBelowMinMonths, RuleBelowMinDays, RuleFormat, RuleDateTime,
+		RuleUnknownService, RulePreviousReadingRequired, RuleReadingLowerThanPrev, RuleNewReadingRequired, RuleNothingToBill,
+		RuleDayNeedsEnd, RuleInvalidPeriod, RulePeriodBilled, RulePaymentLabelChars,
+		RuleRecipientInvalid, RuleOwnEmail, RuleRecipientMismatch, RuleRequiredWithout, RuleLinkInvalid,
+		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
 	}
 }
 

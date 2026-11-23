@@ -147,3 +147,25 @@ func TestOpaqueTokens(t *testing.T) {
 		t.Error("different tokens must hash differently")
 	}
 }
+
+func TestShareTokensAre64CharactersLongAndOnlyTheirHashIsLookedUp(t *testing.T) {
+	tokens := ShareTokens{}
+	token, hash, err := tokens.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(token) != 64 || len(hash) != 64 || strings.Contains(hash, token) {
+		t.Fatalf("token %d chars, hash %d chars", len(token), len(hash))
+	}
+	if tokens.Hash(token) != hash || tokens.Hash(token+"x") == hash {
+		t.Error("the hash is the hash of exactly that token")
+	}
+	for _, r := range token {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			t.Fatalf("token has the character %q", r)
+		}
+	}
+	if other, _, _ := tokens.New(); other == token {
+		t.Error("tokens must be random")
+	}
+}
