@@ -1,6 +1,6 @@
 //go:build integration
 
-package repository
+package postgres
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/authz"
 )
 

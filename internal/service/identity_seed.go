@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-management/internal/domain/shared"
 	"rental-management/internal/model"
 	"rental-management/pkg/authz"
 )
@@ -21,7 +22,7 @@ type CatalogSeeder interface {
 type DemoUserRepository interface {
 	roleGranter
 	UpsertDemo(ctx context.Context, u model.DemoUser) (uuid.UUID, error)
-	// FirstWardCode returns the first seeded ward, or model.ErrNotFound when there is none.
+	// FirstWardCode returns the first seeded ward, or shared.ErrNotFound when there is none.
 	FirstWardCode(ctx context.Context) (int32, error)
 }
 
@@ -71,7 +72,7 @@ func SeedDemo(ctx context.Context, tx TxManager, users DemoUserRepository, passw
 		var ward *int32
 		if code, err := users.FirstWardCode(ctx); err == nil {
 			ward = &code
-		} else if !errors.Is(err, model.ErrNotFound) {
+		} else if !errors.Is(err, shared.ErrNotFound) {
 			return err
 		}
 

@@ -1,6 +1,6 @@
 //go:build integration
 
-package repository
+package postgres
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"os"
 	"testing"
 
-	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
+	"rental-management/internal/domain/shared"
 	"rental-management/pkg/testdb"
 )
 
@@ -148,11 +148,11 @@ func TestTranslateRealConstraintViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := pool.Exec(ctx, insert)
-	if err = translate(err); !model.IsUnique(err) {
+	if err = translate(err); !shared.IsUnique(err) {
 		t.Errorf("a duplicate row must be a unique violation, got %v", err)
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO role_permissions (role_code, permission_code) VALUES ('no_such_role', 'dup.code')`)
-	if err = translate(err); !model.IsForeignKey(err) {
+	if err = translate(err); !shared.IsForeignKey(err) {
 		t.Errorf("a missing parent must be a foreign key violation, got %v", err)
 	}
 }

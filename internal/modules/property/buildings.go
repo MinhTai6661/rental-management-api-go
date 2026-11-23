@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/db"
 )

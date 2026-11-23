@@ -1,6 +1,6 @@
-// Package model holds the plain data of the application: entities, enums, request and response bodies and the
-// domain errors. It imports nothing but the standard library, uuid and the shared pkg constants.
-package model
+// Package shared holds the domain errors every context uses: a row that does not exist and a write a database
+// constraint refused. The persistence adapter produces them, so a use case can react without knowing the database.
+package shared
 
 import "errors"
 

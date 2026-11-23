@@ -22,9 +22,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"rental-management/internal/adapter/persistence/postgres"
+	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/handler"
 	"rental-management/internal/model"
-	"rental-management/internal/repository"
 	"rental-management/internal/router"
 	"rental-management/internal/service"
 	"rental-management/pkg/authz"
@@ -85,8 +86,8 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	ctx := context.Background()
 	e := &env{t: t, pool: pg.NewDB(t), rdb: rds.Client(t), mailer: &mail.Recorder{}, clock: &testClock{time.Now().UTC()}}
-	tx := repository.NewTxManager(e.pool)
-	if err := service.SeedCatalog(ctx, tx, repository.NewPermissionRepository(e.pool)); err != nil {
+	tx := postgres.NewTxManager(e.pool)
+	if err := service.SeedCatalog(ctx, tx, postgres.NewPermissionRepository(e.pool)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,9 +98,9 @@ func newEnv(t *testing.T) *env {
 	log := slog.New(slog.DiscardHandler)
 	e.tokens = service.NewTokenIssuer(testSecret, "rental-management", 15*time.Minute, 5*time.Second, e.clock.now)
 	e.svc, err = service.NewAuthService(service.AuthDeps{
-		Tx: tx, Users: repository.NewUserRepository(e.pool), Sessions: repository.NewSessionRepository(e.pool),
-		Verifications: repository.NewVerificationRepository(e.pool), Permissions: repository.NewPermissionRepository(e.pool),
-		Revocations: repository.NewRevocationRepository(e.rdb, "test:"), Tokens: e.tokens,
+		Tx: tx, Users: postgres.NewUserRepository(e.pool), Sessions: postgres.NewSessionRepository(e.pool),
+		Verifications: postgres.NewVerificationRepository(e.pool), Permissions: postgres.NewPermissionRepository(e.pool),
+		Revocations: redisstore.NewRevocationRepository(e.rdb, "test:"), Tokens: e.tokens,
 		Mailer: e.mailer, Renderer: renderer, Log: log, Now: e.clock.now,
 		Dispatch: func(work func()) { work() }, // inline: the test reads the email right after the request
 	}, service.AuthOptions{
@@ -689,7 +690,7 @@ func TestSeedDemoIsIdempotentAndNeverMixesStaff(t *testing.T) {
 	e.exec(`INSERT INTO wards (code, province_code, name, administrative_level, slug) VALUES (26734, 79, 'Phường Bến Thành', 'ward', 'ben_thanh')`)
 
 	for i := 0; i < 2; i++ {
-		if _, err := service.SeedDemo(ctx, repository.NewTxManager(e.pool), repository.NewUserRepository(e.pool), "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
+		if _, err := service.SeedDemo(ctx, postgres.NewTxManager(e.pool), postgres.NewUserRepository(e.pool), "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
 			t.Fatalf("seed %d: %v", i+1, err)
 		}
 	}

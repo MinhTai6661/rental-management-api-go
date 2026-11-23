@@ -1,4 +1,4 @@
-package repository
+package postgres
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
 )
 
 // UserRepository stores accounts and the roles they hold.
@@ -27,7 +27,7 @@ func (r *UserRepository) Create(ctx context.Context, u model.NewUser) error {
 	return translate(err)
 }
 
-// FindByEmail returns the account with the (already normalized) email, or model.ErrNotFound.
+// FindByEmail returns the account with the (already normalized) email, or shared.ErrNotFound.
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (model.User, error) {
 	row, err := queries(ctx, r.pool).GetUserByEmail(ctx, email)
 	if err != nil {
@@ -39,7 +39,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (model.U
 	}, nil
 }
 
-// Profile returns the account with its ward and province, or model.ErrNotFound.
+// Profile returns the account with its ward and province, or shared.ErrNotFound.
 func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (model.UserProfile, error) {
 	row, err := queries(ctx, r.pool).GetUserProfile(ctx, id)
 	if err != nil {
@@ -53,7 +53,7 @@ func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (model.UserP
 	}, nil
 }
 
-// AuthUser returns the state and roles of the account, or model.ErrNotFound.
+// AuthUser returns the state and roles of the account, or shared.ErrNotFound.
 func (r *UserRepository) AuthUser(ctx context.Context, id uuid.UUID) (model.AuthUser, error) {
 	row, err := queries(ctx, r.pool).GetAuthUser(ctx, id)
 	if err != nil {
@@ -97,7 +97,7 @@ func (r *UserRepository) UpsertDemo(ctx context.Context, u model.DemoUser) (uuid
 	return id, translate(err)
 }
 
-// FirstWardCode returns the first seeded ward (the address of the demo accounts), or model.ErrNotFound.
+// FirstWardCode returns the first seeded ward (the address of the demo accounts), or shared.ErrNotFound.
 func (r *UserRepository) FirstWardCode(ctx context.Context) (int32, error) {
 	code, err := queries(ctx, r.pool).FirstWardCode(ctx)
 	return code, translate(err)

@@ -37,8 +37,8 @@ linters:
               desc: model must not depend on the database driver
             - pkg: github.com/redis
               desc: model must not depend on Redis
-            - pkg: rental-management/internal/repository
-              desc: model must not import repository
+            - pkg: rental-management/internal/adapter
+              desc: model must not import an adapter
             - pkg: rental-management/internal/service
               desc: model must not import service
             - pkg: rental-management/internal/handler
@@ -56,8 +56,8 @@ linters:
               desc: service must not depend on the database driver
             - pkg: github.com/redis
               desc: service must not depend on Redis
-            - pkg: rental-management/internal/repository
-              desc: service declares its own repository interfaces and must not import repository
+            - pkg: rental-management/internal/adapter
+              desc: service declares its own repository interfaces and must not import an adapter
             - pkg: rental-management/internal/handler
               desc: service must not import handler
             - pkg: rental-management/internal/router
@@ -65,7 +65,8 @@ linters:
         # repository is the only place that talks to the database and Redis.
         layer-repository:
           files:
-            - "**/internal/repository/**"
+            - "**/internal/adapter/persistence/**"
+            - "**/internal/adapter/redis/**"
           deny:
             - pkg: github.com/gin-gonic/gin
               desc: repository must not depend on the HTTP framework
@@ -84,8 +85,8 @@ linters:
               desc: handler must not depend on the database driver
             - pkg: github.com/redis
               desc: handler must not depend on Redis
-            - pkg: rental-management/internal/repository
-              desc: handler must not import repository
+            - pkg: rental-management/internal/adapter
+              desc: handler must not import an adapter
         # feature modules never import each other, the layers or the wiring; they share only pkg and config.
         location-is-isolated:
           files:

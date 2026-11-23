@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-management/internal/domain/shared"
 	"rental-management/internal/model"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/authz"
@@ -184,9 +185,9 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (model.Use
 		return s.insertVerificationToken(ctx, id, verifyHash, now)
 	})
 	switch {
-	case model.IsUnique(err):
+	case shared.IsUnique(err):
 		return model.UserView{}, apperr.Invalid(apperr.Field{Name: "email", Rule: apperr.RuleUnique})
-	case model.IsForeignKey(err):
+	case shared.IsForeignKey(err):
 		return model.UserView{}, apperr.Invalid(apperr.Field{Name: "ward_code", Rule: apperr.RuleExists})
 	case err != nil:
 		return model.UserView{}, err
@@ -202,7 +203,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, client 
 	user, err := s.users.FindByEmail(ctx, NormalizeEmail(email))
 	hash := s.dummyHash
 	found := err == nil
-	if err != nil && !errors.Is(err, model.ErrNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return model.LoginResult{}, err
 	}
 	if found && user.PasswordHash != nil {
@@ -315,7 +316,7 @@ func (s *AuthService) Refresh(ctx context.Context, raw string, client AuthClient
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
 		rt, err := s.sessions.RefreshTokenForUpdate(ctx, HashToken(raw))
-		if errors.Is(err, model.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			fail = apperr.RefreshInvalid()
 			return nil
 		}
@@ -438,7 +439,7 @@ func (s *AuthService) SwitchRole(ctx context.Context, p authz.Principal, role, r
 		return model.LoginResult{}, apperr.Unauthenticated()
 	}
 	row, err := s.sessions.SessionOfRefreshToken(ctx, HashToken(refresh))
-	if errors.Is(err, model.ErrNotFound) || (err == nil && (row.UserID != userID || row.SessionID != oldSession || row.RevokedAt != nil)) {
+	if errors.Is(err, shared.ErrNotFound) || (err == nil && (row.UserID != userID || row.SessionID != oldSession || row.RevokedAt != nil)) {
 		return model.LoginResult{}, apperr.RefreshInvalid()
 	}
 	if err != nil {
@@ -557,7 +558,7 @@ func (s *AuthService) Authenticate(ctx context.Context, bearer string) (authz.Pr
 	}
 
 	user, err := s.users.AuthUser(ctx, userID)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, shared.ErrNotFound) {
 		return authz.Principal{}, apperr.Unauthenticated()
 	}
 	if err != nil {
@@ -587,7 +588,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, raw string) error {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
 		row, err := s.verifications.ForUpdate(ctx, HashToken(raw))
-		if errors.Is(err, model.ErrNotFound) {
+		if errors.Is(err, shared.ErrNotFound) {
 			return nil
 		}
 		if err != nil {
@@ -621,7 +622,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, raw string) error {
 func (s *AuthService) ResendVerification(ctx context.Context, email, lang string) error {
 	email = NormalizeEmail(email)
 	user, err := s.users.FindByEmail(ctx, email)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, shared.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -635,7 +636,7 @@ func (s *AuthService) ResendVerification(ctx context.Context, email, lang string
 	switch {
 	case err == nil:
 		lastSent = &last
-	case !errors.Is(err, model.ErrNotFound):
+	case !errors.Is(err, shared.ErrNotFound):
 		return err
 	}
 	now := s.now()

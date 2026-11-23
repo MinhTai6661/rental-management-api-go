@@ -1,5 +1,5 @@
 version: "2"
-# One generated package (internal/repository/sqlc) for every query under db/queries.
+# One generated package (internal/adapter/persistence/postgres/sqlc) for every query under db/queries.
 # The schema is the goose migrations (sqlc reads the Up part of each file).
 sql:
   - engine: postgresql
@@ -11,7 +11,7 @@ sql:
     gen:
       go:
         package: sqlc
-        out: internal/repository/sqlc
+        out: internal/adapter/persistence/postgres/sqlc
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
         omit_unused_structs: true

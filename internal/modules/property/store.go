@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/pkg/db"
 )
 

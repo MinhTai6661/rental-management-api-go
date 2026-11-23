@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 )
 
 // SeedDemo gives the demo landlord a first building with default rent, area and charges and a few rooms: P101 to

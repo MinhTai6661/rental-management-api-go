@@ -1,4 +1,4 @@
-package repository
+package postgres
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
 )
 
 // PermissionRepository reads the permissions of roles and writes the role and permission catalog.

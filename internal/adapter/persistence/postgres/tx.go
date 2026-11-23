@@ -1,17 +1,14 @@
-// Package repository is the only place that talks to the database (through the generated sqlc package) and to
-// Redis. Repositories take and return model types, never sqlc rows.
-package repository
+// Package postgres is the only place that talks to the database (through the generated sqlc package). Its
+// repositories take and return domain types, never sqlc rows.
+package postgres
 
 import (
 	"context"
-	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/pkg/db"
 )
 
@@ -44,31 +41,4 @@ func queries(ctx context.Context, pool *pgxpool.Pool) *sqlcgen.Queries {
 		return sqlcgen.New(tx)
 	}
 	return sqlcgen.New(pool)
-}
-
-// Postgres error codes of a constraint that refused a row.
-const (
-	sqlStateUniqueViolation     = "23505"
-	sqlStateForeignKeyViolation = "23503"
-)
-
-// translate turns a driver error into a domain error: no rows becomes model.ErrNotFound, a unique or foreign key
-// violation a *model.ConstraintError. Any other error is returned as it is.
-func translate(err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return model.ErrNotFound
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case sqlStateUniqueViolation:
-			return &model.ConstraintError{Kind: model.Unique, Constraint: pgErr.ConstraintName, Err: err}
-		case sqlStateForeignKeyViolation:
-			return &model.ConstraintError{Kind: model.ForeignKey, Constraint: pgErr.ConstraintName, Err: err}
-		}
-	}
-	return err
 }

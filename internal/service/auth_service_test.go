@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-management/internal/domain/shared"
 	"rental-management/internal/model"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/authz"
@@ -37,7 +38,7 @@ func (f *fakeUsers) FindByEmail(_ context.Context, email string) (model.User, er
 	if u, ok := f.byEmail[email]; ok {
 		return u, nil
 	}
-	return model.User{}, model.ErrNotFound
+	return model.User{}, shared.ErrNotFound
 }
 
 func (f *fakeUsers) Create(_ context.Context, u model.NewUser) error {
@@ -163,7 +164,7 @@ func TestLoginRefusesWhatIsNotAnActiveVerifiedAccountWithTheRightPassword(t *tes
 
 func TestRegisterOfATakenEmailIsAValidationErrorOnEmail(t *testing.T) {
 	f := newAuthFixture(t)
-	f.users.createErr = &model.ConstraintError{Kind: model.Unique, Constraint: "users_email_key"}
+	f.users.createErr = &shared.ConstraintError{Kind: shared.Unique, Constraint: "users_email_key"}
 
 	_, err := f.svc.Register(context.Background(), RegisterInput{FullName: "A", Email: "Taken@Example.vn", Password: "long-enough-1"})
 	var ae *apperr.Error
@@ -178,7 +179,7 @@ func TestRegisterOfATakenEmailIsAValidationErrorOnEmail(t *testing.T) {
 
 func TestRegisterOfAnUnknownWardIsAValidationErrorOnWardCode(t *testing.T) {
 	f := newAuthFixture(t)
-	f.users.createErr = &model.ConstraintError{Kind: model.ForeignKey, Constraint: "users_ward_code_fkey"}
+	f.users.createErr = &shared.ConstraintError{Kind: shared.ForeignKey, Constraint: "users_ward_code_fkey"}
 
 	ward := int32(1)
 	_, err := f.svc.Register(context.Background(), RegisterInput{FullName: "A", Email: "a@example.vn", Password: "long-enough-1", WardCode: &ward})

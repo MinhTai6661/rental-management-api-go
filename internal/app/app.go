@@ -18,10 +18,11 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"rental-management/config"
+	"rental-management/internal/adapter/persistence/postgres"
+	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/handler"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
-	"rental-management/internal/repository"
 	"rental-management/internal/router"
 	"rental-management/internal/service"
 	"rental-management/pkg/db"
@@ -143,12 +144,12 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 		}
 	}
 	return service.NewAuthService(service.AuthDeps{
-		Tx:            repository.NewTxManager(pool),
-		Users:         repository.NewUserRepository(pool),
-		Sessions:      repository.NewSessionRepository(pool),
-		Verifications: repository.NewVerificationRepository(pool),
-		Permissions:   repository.NewPermissionRepository(pool),
-		Revocations:   repository.NewRevocationRepository(rdb, cfg.RedisKeyPrefix),
+		Tx:            postgres.NewTxManager(pool),
+		Users:         postgres.NewUserRepository(pool),
+		Sessions:      postgres.NewSessionRepository(pool),
+		Verifications: postgres.NewVerificationRepository(pool),
+		Permissions:   postgres.NewPermissionRepository(pool),
+		Revocations:   redisstore.NewRevocationRepository(rdb, cfg.RedisKeyPrefix),
 		Tokens:        service.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
 		Mailer:        mailer,
 		Renderer:      renderer,

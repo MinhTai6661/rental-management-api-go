@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"rental-management/config"
+	"rental-management/internal/adapter/persistence/postgres"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
-	"rental-management/internal/repository"
 	"rental-management/internal/service"
 	"rental-management/pkg/db"
 	"rental-management/pkg/logger"
@@ -62,7 +62,7 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	defer pool.Close()
 
-	if err := service.SeedCatalog(ctx, repository.NewTxManager(pool), repository.NewPermissionRepository(pool)); err != nil {
+	if err := service.SeedCatalog(ctx, postgres.NewTxManager(pool), postgres.NewPermissionRepository(pool)); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(out, "seeded roles and permissions")
@@ -71,7 +71,7 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "seeded provinces and wards")
 	if *demo {
-		ids, err := service.SeedDemo(ctx, repository.NewTxManager(pool), repository.NewUserRepository(pool), cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
+		ids, err := service.SeedDemo(ctx, postgres.NewTxManager(pool), postgres.NewUserRepository(pool), cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package repository
+package postgres
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/internal/model"
-	sqlcgen "rental-management/internal/repository/sqlc"
 )
 
 // SessionRepository stores login sessions and their refresh tokens (hashes only).
@@ -55,7 +55,7 @@ func (r *SessionRepository) InsertRefreshToken(ctx context.Context, t model.NewR
 }
 
 // RefreshTokenForUpdate returns the token with its session state and locks its row until the transaction ends, so
-// two requests with the same token are handled one after the other. model.ErrNotFound when unknown.
+// two requests with the same token are handled one after the other. shared.ErrNotFound when unknown.
 func (r *SessionRepository) RefreshTokenForUpdate(ctx context.Context, hash []byte) (model.RefreshToken, error) {
 	row, err := queries(ctx, r.pool).GetRefreshTokenForUpdate(ctx, hash)
 	if err != nil {
@@ -72,7 +72,7 @@ func (r *SessionRepository) MarkRefreshTokenRotated(ctx context.Context, id uuid
 	return translate(queries(ctx, r.pool).MarkRefreshTokenRotated(ctx, sqlcgen.MarkRefreshTokenRotatedParams{ID: id, Now: now}))
 }
 
-// SessionOfRefreshToken returns the session and user a refresh token belongs to, or model.ErrNotFound.
+// SessionOfRefreshToken returns the session and user a refresh token belongs to, or shared.ErrNotFound.
 func (r *SessionRepository) SessionOfRefreshToken(ctx context.Context, hash []byte) (model.TokenSession, error) {
 	row, err := queries(ctx, r.pool).GetRefreshTokenSession(ctx, hash)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
 	"rental-management/pkg/storage"
 )
 

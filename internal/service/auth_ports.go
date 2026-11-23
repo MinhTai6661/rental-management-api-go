@@ -13,12 +13,12 @@ import (
 // them; the service never imports it, so the rules can be tested with fakes and no database.
 
 // TxManager runs fn in one transaction. Repository calls made with the ctx given to fn join it. A repository
-// error (model.ErrNotFound, *model.ConstraintError) comes back through fn unchanged.
+// error (shared.ErrNotFound, *shared.ConstraintError) comes back through fn unchanged.
 type TxManager interface {
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
-// UserRepository stores accounts and their roles. Lookups return model.ErrNotFound when there is no such row.
+// UserRepository stores accounts and their roles. Lookups return shared.ErrNotFound when there is no such row.
 type UserRepository interface {
 	Create(ctx context.Context, u model.NewUser) error
 	FindByEmail(ctx context.Context, email string) (model.User, error)

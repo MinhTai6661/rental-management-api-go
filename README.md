@@ -89,7 +89,7 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 ```
 cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]
 db/migrations/                goose migrations, embedded in the binary
-db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/repository/sqlc, committed, never edited by hand)
+db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/adapter/persistence/postgres/sqlc, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/modules/location/data/locations.json.gz)
 
 config/                       environment -> validated Config
@@ -135,7 +135,7 @@ Rules (checked in review and by the linters, see `.golangci.yml`):
 - **gin is imported only** by `pkg/httpx`, `app`, `handler` and `router`.
 - All error-to-HTTP mapping happens in `httpx.Fail`; services return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
-- There is only one generated query package, `internal/repository/sqlc` (query names are unique across all of `db/queries`).
+- There is only one generated query package, `internal/adapter/persistence/postgres/sqlc` (query names are unique across all of `db/queries`).
 - Pure business rules (calculations, state machines) live in small, DB-free functions with table tests; services are also tested with hand-written fakes of the repository interfaces (no database).
 - Feature modules still in `internal/modules` never import each other or the layers.
 
@@ -396,7 +396,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 ## Makefile
 
 `make help` lists everything. Main targets: `check` (gofmt check + vet + unit tests), `lint`, `fmt`, `fmt-check`,
-`tidy`, `sqlc` (regenerate `internal/repository/sqlc`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
+`tidy`, `sqlc` (regenerate `internal/adapter/persistence/postgres/sqlc`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
 `logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `fetch-locations`, `dev`, `hooks`.
 
 ## Git workflow
@@ -413,7 +413,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 ## Adding a module
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
-2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/repository/sqlc`).
+2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/adapter/persistence/postgres/sqlc`).
 3. One file per layer, named after the feature (see identity): `internal/model/<feature>.go`, `internal/repository/<feature>_repository.go`,
    `internal/service/<feature>_service.go` + `<feature>_ports.go` (returns `apperr`), `internal/handler/<feature>_handler.go`,
    `internal/router/<feature>_routes.go`; pure rules in small DB-free functions with table tests. (location and property still use `internal/modules/<module>/` until they are moved.)
