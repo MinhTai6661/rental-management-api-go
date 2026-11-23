@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
-	"rental-management/internal/model"
+	domain "rental-management/internal/domain/identity"
 )
 
 // PermissionRepository reads the permissions of roles and writes the role and permission catalog.
@@ -26,7 +26,7 @@ func (r *PermissionRepository) CodesOfRole(ctx context.Context, role string) ([]
 
 // SeedCatalog makes the roles, permissions and role_permissions tables match the arguments: it adds what is
 // missing, updates what changed and removes permissions that are not listed. Call it inside a transaction.
-func (r *PermissionRepository) SeedCatalog(ctx context.Context, roles []model.Role, perms []model.Permission, grants map[string][]string) error {
+func (r *PermissionRepository) SeedCatalog(ctx context.Context, roles []domain.Role, perms []domain.Permission, grants map[string][]string) error {
 	q := queries(ctx, r.pool)
 	for _, role := range roles {
 		err := q.UpsertRole(ctx, sqlcgen.UpsertRoleParams{

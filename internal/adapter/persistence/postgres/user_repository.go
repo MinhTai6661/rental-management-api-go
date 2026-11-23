@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
-	"rental-management/internal/model"
+	domain "rental-management/internal/domain/identity"
 )
 
 // UserRepository stores accounts and the roles they hold.
@@ -18,7 +18,7 @@ type UserRepository struct{ pool *pgxpool.Pool }
 func NewUserRepository(pool *pgxpool.Pool) *UserRepository { return &UserRepository{pool: pool} }
 
 // Create inserts an account. A taken email is a unique ConstraintError, an unknown ward a foreign key one.
-func (r *UserRepository) Create(ctx context.Context, u model.NewUser) error {
+func (r *UserRepository) Create(ctx context.Context, u domain.NewUser) error {
 	_, err := queries(ctx, r.pool).CreateUser(ctx, sqlcgen.CreateUserParams{
 		ID: u.ID, Email: &u.Email, PasswordHash: &u.PasswordHash, FullName: u.FullName, PhoneNumber: u.PhoneNumber,
 		WardCode: u.WardCode, AddressDetail: u.AddressDetail, LastActiveRole: &u.LastActiveRole,
@@ -28,24 +28,24 @@ func (r *UserRepository) Create(ctx context.Context, u model.NewUser) error {
 }
 
 // FindByEmail returns the account with the (already normalized) email, or shared.ErrNotFound.
-func (r *UserRepository) FindByEmail(ctx context.Context, email string) (model.User, error) {
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (domain.User, error) {
 	row, err := queries(ctx, r.pool).GetUserByEmail(ctx, email)
 	if err != nil {
-		return model.User{}, translate(err)
+		return domain.User{}, translate(err)
 	}
-	return model.User{
+	return domain.User{
 		ID: row.ID, Email: row.Email, PasswordHash: row.PasswordHash, Status: row.Status,
 		LastActiveRole: row.LastActiveRole, EmailVerifiedAt: row.EmailVerifiedAt, FullName: row.FullName,
 	}, nil
 }
 
 // Profile returns the account with its ward and province, or shared.ErrNotFound.
-func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (model.UserProfile, error) {
+func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (domain.UserProfile, error) {
 	row, err := queries(ctx, r.pool).GetUserProfile(ctx, id)
 	if err != nil {
-		return model.UserProfile{}, translate(err)
+		return domain.UserProfile{}, translate(err)
 	}
-	return model.UserProfile{
+	return domain.UserProfile{
 		ID: row.ID, Email: row.Email, FullName: row.FullName, PhoneNumber: row.PhoneNumber, Status: row.Status,
 		AddressDetail: row.AddressDetail, LastActiveRole: row.LastActiveRole, TermsVersion: row.TermsVersion,
 		CreatedAt: row.CreatedAt, WardCode: row.WardCode, WardName: row.WardName,
@@ -54,12 +54,12 @@ func (r *UserRepository) Profile(ctx context.Context, id uuid.UUID) (model.UserP
 }
 
 // AuthUser returns the state and roles of the account, or shared.ErrNotFound.
-func (r *UserRepository) AuthUser(ctx context.Context, id uuid.UUID) (model.AuthUser, error) {
+func (r *UserRepository) AuthUser(ctx context.Context, id uuid.UUID) (domain.AuthUser, error) {
 	row, err := queries(ctx, r.pool).GetAuthUser(ctx, id)
 	if err != nil {
-		return model.AuthUser{}, translate(err)
+		return domain.AuthUser{}, translate(err)
 	}
-	return model.AuthUser{Status: row.Status, LastActiveRole: row.LastActiveRole, Roles: row.Roles}, nil
+	return domain.AuthUser{Status: row.Status, LastActiveRole: row.LastActiveRole, Roles: row.Roles}, nil
 }
 
 // PasswordHash returns the stored hash; nil for an account without a password.
@@ -89,7 +89,7 @@ func (r *UserRepository) AddRole(ctx context.Context, userID uuid.UUID, role str
 }
 
 // UpsertDemo creates a development account, or refreshes its password when the email exists, and returns its id.
-func (r *UserRepository) UpsertDemo(ctx context.Context, u model.DemoUser) (uuid.UUID, error) {
+func (r *UserRepository) UpsertDemo(ctx context.Context, u domain.DemoUser) (uuid.UUID, error) {
 	id, err := queries(ctx, r.pool).UpsertDemoUser(ctx, sqlcgen.UpsertDemoUserParams{
 		ID: u.ID, Email: &u.Email, PasswordHash: &u.PasswordHash, FullName: u.FullName, WardCode: u.WardCode,
 		LastActiveRole: &u.LastActiveRole, TermsVersion: &u.TermsVersion, Now: u.Now,

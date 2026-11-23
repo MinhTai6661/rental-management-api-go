@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
-	"rental-management/internal/model"
+	domain "rental-management/internal/domain/identity"
 )
 
 // SessionRepository stores login sessions and their refresh tokens (hashes only).
@@ -20,7 +20,7 @@ func NewSessionRepository(pool *pgxpool.Pool) *SessionRepository {
 }
 
 // Create opens a session.
-func (r *SessionRepository) Create(ctx context.Context, s model.NewSession, now time.Time) error {
+func (r *SessionRepository) Create(ctx context.Context, s domain.NewSession, now time.Time) error {
 	return translate(queries(ctx, r.pool).CreateSession(ctx, sqlcgen.CreateSessionParams{
 		ID: s.ID, UserID: s.UserID, ActiveRole: s.Role, UserAgent: s.UserAgent, IpAddress: s.IP, Now: now,
 	}))
@@ -41,14 +41,14 @@ func (r *SessionRepository) RevokeAllOfUser(ctx context.Context, userID uuid.UUI
 }
 
 // Touch records a use of the session: when, in which role and from where.
-func (r *SessionRepository) Touch(ctx context.Context, t model.SessionTouch, now time.Time) error {
+func (r *SessionRepository) Touch(ctx context.Context, t domain.SessionTouch, now time.Time) error {
 	return translate(queries(ctx, r.pool).TouchSession(ctx, sqlcgen.TouchSessionParams{
 		ID: t.ID, Now: now, ActiveRole: t.Role, UserAgent: t.UserAgent, IpAddress: t.IP,
 	}))
 }
 
 // InsertRefreshToken stores a refresh token.
-func (r *SessionRepository) InsertRefreshToken(ctx context.Context, t model.NewRefreshToken, now time.Time) error {
+func (r *SessionRepository) InsertRefreshToken(ctx context.Context, t domain.NewRefreshToken, now time.Time) error {
 	return translate(queries(ctx, r.pool).InsertRefreshToken(ctx, sqlcgen.InsertRefreshTokenParams{
 		ID: t.ID, SessionID: t.SessionID, TokenHash: t.Hash, ParentID: t.ParentID, ExpiresAt: t.ExpiresAt, Now: now,
 	}))
@@ -56,12 +56,12 @@ func (r *SessionRepository) InsertRefreshToken(ctx context.Context, t model.NewR
 
 // RefreshTokenForUpdate returns the token with its session state and locks its row until the transaction ends, so
 // two requests with the same token are handled one after the other. shared.ErrNotFound when unknown.
-func (r *SessionRepository) RefreshTokenForUpdate(ctx context.Context, hash []byte) (model.RefreshToken, error) {
+func (r *SessionRepository) RefreshTokenForUpdate(ctx context.Context, hash []byte) (domain.RefreshToken, error) {
 	row, err := queries(ctx, r.pool).GetRefreshTokenForUpdate(ctx, hash)
 	if err != nil {
-		return model.RefreshToken{}, translate(err)
+		return domain.RefreshToken{}, translate(err)
 	}
-	return model.RefreshToken{
+	return domain.RefreshToken{
 		ID: row.ID, SessionID: row.SessionID, ExpiresAt: row.ExpiresAt, RotatedAt: row.RotatedAt, UserID: row.UserID,
 		ActiveRole: row.ActiveRole, SessionRevokedAt: row.SessionRevokedAt,
 	}, nil
@@ -73,10 +73,10 @@ func (r *SessionRepository) MarkRefreshTokenRotated(ctx context.Context, id uuid
 }
 
 // SessionOfRefreshToken returns the session and user a refresh token belongs to, or shared.ErrNotFound.
-func (r *SessionRepository) SessionOfRefreshToken(ctx context.Context, hash []byte) (model.TokenSession, error) {
+func (r *SessionRepository) SessionOfRefreshToken(ctx context.Context, hash []byte) (domain.TokenSession, error) {
 	row, err := queries(ctx, r.pool).GetRefreshTokenSession(ctx, hash)
 	if err != nil {
-		return model.TokenSession{}, translate(err)
+		return domain.TokenSession{}, translate(err)
 	}
-	return model.TokenSession{SessionID: row.SessionID, UserID: row.UserID, RevokedAt: row.RevokedAt}, nil
+	return domain.TokenSession{SessionID: row.SessionID, UserID: row.UserID, RevokedAt: row.RevokedAt}, nil
 }

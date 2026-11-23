@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
-	"rental-management/internal/model"
+	domain "rental-management/internal/domain/identity"
 )
 
 // VerificationRepository stores email verification tokens (hashes only).
@@ -20,7 +20,7 @@ func NewVerificationRepository(pool *pgxpool.Pool) *VerificationRepository {
 }
 
 // Insert stores a token.
-func (r *VerificationRepository) Insert(ctx context.Context, t model.NewVerificationToken, now time.Time) error {
+func (r *VerificationRepository) Insert(ctx context.Context, t domain.NewVerificationToken, now time.Time) error {
 	return translate(queries(ctx, r.pool).InsertVerificationToken(ctx, sqlcgen.InsertVerificationTokenParams{
 		ID: t.ID, UserID: t.UserID, TokenHash: t.Hash, ExpiresAt: t.ExpiresAt, Now: now,
 	}))
@@ -32,12 +32,12 @@ func (r *VerificationRepository) InvalidateForUser(ctx context.Context, userID u
 }
 
 // ForUpdate returns the token and locks its row until the transaction ends; shared.ErrNotFound when unknown.
-func (r *VerificationRepository) ForUpdate(ctx context.Context, hash []byte) (model.VerificationToken, error) {
+func (r *VerificationRepository) ForUpdate(ctx context.Context, hash []byte) (domain.VerificationToken, error) {
 	row, err := queries(ctx, r.pool).GetVerificationTokenForUpdate(ctx, hash)
 	if err != nil {
-		return model.VerificationToken{}, translate(err)
+		return domain.VerificationToken{}, translate(err)
 	}
-	return model.VerificationToken{ID: row.ID, UserID: row.UserID, ExpiresAt: row.ExpiresAt, UsedAt: row.UsedAt}, nil
+	return domain.VerificationToken{ID: row.ID, UserID: row.UserID, ExpiresAt: row.ExpiresAt, UsedAt: row.UsedAt}, nil
 }
 
 // MarkUsed records that the token was used.

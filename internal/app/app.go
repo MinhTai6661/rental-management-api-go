@@ -18,13 +18,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"rental-management/config"
+	httpadapter "rental-management/internal/adapter/http"
+	mailadapter "rental-management/internal/adapter/mail"
 	"rental-management/internal/adapter/persistence/postgres"
 	redisstore "rental-management/internal/adapter/redis"
-	"rental-management/internal/handler"
+	"rental-management/internal/adapter/security"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
-	"rental-management/internal/router"
-	"rental-management/internal/service"
+	usecase "rental-management/internal/usecase/identity"
 	"rental-management/pkg/db"
 	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
@@ -77,6 +78,7 @@ func RunAPI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	authenticator := httpadapter.NewAuthenticator(auth)
 
 	files, err := storage.NewLocalDisk(cfg.MediaDir, cfg.MediaPublicBaseURL)
 	if err != nil {
@@ -97,9 +99,9 @@ func RunAPI(ctx context.Context) error {
 					Limiter: limiter, Limit: location.DefaultLimit, Window: location.DefaultWindow,
 				}),
 				func(v1 *gin.RouterGroup) {
-					router.MountAuth(v1, handler.NewAuthHandler(auth, httpx.NewBinder(), limiter), auth, limiter)
+					httpadapter.MountAuth(v1, httpadapter.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
 				},
-				property.Mount(properties, property.RouteOptions{Auth: auth, Limiter: limiter}),
+				property.Mount(properties, property.RouteOptions{Auth: authenticator, Limiter: limiter}),
 			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -129,9 +131,10 @@ func RunAPI(ctx context.Context) error {
 	return nil
 }
 
-// newIdentity builds the account service: tokens, revocations in Redis, and the mailer (SMTP, or the log when no
-// SMTP server is set, which RequireAPI only allows outside production).
-func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client) (*service.AuthService, error) {
+// newIdentity builds the account use cases on their adapters: Postgres, the revocation store in Redis, argon2id
+// and JWT, and the mailer (SMTP, or the log when no SMTP server is set, which RequireAPI only allows outside
+// production).
+func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client) (*usecase.Auth, error) {
 	renderer, err := mail.NewRenderer()
 	if err != nil {
 		return nil, err
@@ -143,21 +146,21 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 			Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
 		}
 	}
-	return service.NewAuthService(service.AuthDeps{
+	return usecase.NewAuth(usecase.Deps{
 		Tx:            postgres.NewTxManager(pool),
 		Users:         postgres.NewUserRepository(pool),
 		Sessions:      postgres.NewSessionRepository(pool),
 		Verifications: postgres.NewVerificationRepository(pool),
 		Permissions:   postgres.NewPermissionRepository(pool),
-		Revocations:   redisstore.NewRevocationRepository(rdb, cfg.RedisKeyPrefix),
-		Tokens:        service.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
-		Mailer:        mailer,
-		Renderer:      renderer,
+		Revocations:   redisstore.NewRevocationStore(rdb, cfg.RedisKeyPrefix),
+		Hasher:        security.PasswordHasher{},
+		Tokens:        security.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
+		Opaque:        security.OpaqueTokens{},
+		Mailer:        mailadapter.NewVerificationMailer(mailer, renderer, cfg.WebURL),
+		Clock:         usecase.ClockFunc(time.Now),
 		Log:           log,
-		Now:           time.Now,
-	}, service.AuthOptions{
+	}, usecase.Options{
 		TermsVersion:       cfg.TermsVersion,
-		WebURL:             cfg.WebURL,
 		RefreshTTL:         cfg.RefreshTokenTTL,
 		ReuseGrace:         cfg.RefreshReuseGrace,
 		VerificationTTL:    cfg.EmailVerificationTTL,

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
-	"rental-management/internal/model"
+	domain "rental-management/internal/domain/identity"
 	"rental-management/pkg/authz"
 )
 
@@ -48,14 +48,14 @@ func snapshot(t *testing.T, q *sqlcgen.Queries) (roles map[string]sqlcgen.Role, 
 	return roles, perms, granted
 }
 
-// seedCatalog seeds the catalog the way the seed command does: in one transaction, from authz and the model.
+// seedCatalog seeds the catalog the way the seed command does: in one transaction, from authz and the domain.
 func seedCatalog(ctx context.Context, pool *pgxpool.Pool) error {
-	var roles []model.Role
+	var roles []domain.Role
 	for _, code := range authz.Roles() {
-		roles = append(roles, model.Role{Code: code, Seniority: authz.Seniority(code), IsStaff: authz.IsStaff(code)})
+		roles = append(roles, domain.Role{Code: code, Seniority: authz.Seniority(code), IsStaff: authz.IsStaff(code)})
 	}
 	return NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
-		return NewPermissionRepository(pool).SeedCatalog(ctx, roles, model.Permissions(), model.RolePermissions())
+		return NewPermissionRepository(pool).SeedCatalog(ctx, roles, domain.Permissions(), domain.RolePermissions())
 	})
 }
 
@@ -92,13 +92,13 @@ func TestSeedCatalogMatchesTheCatalogAndIsIdempotent(t *testing.T) {
 
 	// Permissions and the role matrix equal the catalog.
 	var wantPerms []string
-	for _, p := range model.Permissions() {
+	for _, p := range domain.Permissions() {
 		wantPerms = append(wantPerms, p.Code)
 	}
 	if !slices.Equal(permsFirst, wantPerms) {
 		t.Errorf("permissions stored differ from the catalog:\n got %v\nwant %v", permsFirst, wantPerms)
 	}
-	for role, want := range model.RolePermissions() {
+	for role, want := range domain.RolePermissions() {
 		if !slices.Equal(grantedFirst[role], want) {
 			t.Errorf("permissions of %s:\n got %v\nwant %v", role, grantedFirst[role], want)
 		}
@@ -131,7 +131,7 @@ func TestSeedCatalogRemovesStalePermissionsAndRepairsGrants(t *testing.T) {
 	if slices.Contains(perms, "legacy.thing") {
 		t.Error("a permission outside the catalog must be removed")
 	}
-	if !slices.Equal(granted[authz.RoleTenant], model.RolePermissions()[authz.RoleTenant]) {
+	if !slices.Equal(granted[authz.RoleTenant], domain.RolePermissions()[authz.RoleTenant]) {
 		t.Errorf("tenant grants were not repaired: %v", granted[authz.RoleTenant])
 	}
 }

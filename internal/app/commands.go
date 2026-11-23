@@ -11,9 +11,11 @@ import (
 
 	"rental-management/config"
 	"rental-management/internal/adapter/persistence/postgres"
+	"rental-management/internal/adapter/security"
+	domain "rental-management/internal/domain/identity"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
-	"rental-management/internal/service"
+	usecase "rental-management/internal/usecase/identity"
 	"rental-management/pkg/db"
 	"rental-management/pkg/logger"
 	"rental-management/pkg/storage"
@@ -62,7 +64,9 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	defer pool.Close()
 
-	if err := service.SeedCatalog(ctx, postgres.NewTxManager(pool), postgres.NewPermissionRepository(pool)); err != nil {
+	users := postgres.NewUserRepository(pool)
+	seeder := usecase.NewSeeder(postgres.NewTxManager(pool), postgres.NewPermissionRepository(pool), users, security.PasswordHasher{})
+	if err := seeder.SeedCatalog(ctx); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(out, "seeded roles and permissions")
@@ -71,11 +75,11 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "seeded provinces and wards")
 	if *demo {
-		ids, err := service.SeedDemo(ctx, postgres.NewTxManager(pool), postgres.NewUserRepository(pool), cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
+		ids, err := seeder.SeedDemo(ctx, cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(service.DemoAccounts()))
+		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(domain.DemoAccounts()))
 
 		log, err := logger.New(io.Discard, cfg.LogLevel, cfg.LogFormat)
 		if err != nil {

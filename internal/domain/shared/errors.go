@@ -45,3 +45,7 @@ func isKind(err error, kind ConstraintKind) bool {
 	var ce *ConstraintError
 	return errors.As(err, &ce) && ce.Kind == kind
 }
+
+// ErrUnavailable marks the failure of a dependency a request cannot do without (the revocation store, for one):
+// the caller answers "try again later" instead of letting the request through.
+var ErrUnavailable = errors.New("dependency unavailable")

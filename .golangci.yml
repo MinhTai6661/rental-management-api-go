@@ -25,68 +25,104 @@ linters:
           deny:
             - pkg: rental-management/internal
               desc: shared code must not import business code or the wiring layer
-        # Layers (identity is split this way; location and property are still feature modules being moved).
-        # model is plain data: nothing but the standard library, uuid and the shared constants.
-        layer-model:
+        # Clean architecture for the contexts that are migrated (identity): adapter -> usecase -> domain.
+        # location and property are still feature modules in internal/modules until their step.
+        #
+        # domain is the enterprise rules: standard library, uuid and the pure pkg/authz only.
+        layer-domain:
           files:
-            - "**/internal/model/**"
+            - "**/internal/domain/**"
           deny:
             - pkg: github.com/gin-gonic/gin
-              desc: model must not depend on the HTTP framework
+              desc: domain must not depend on the HTTP framework
             - pkg: github.com/jackc
-              desc: model must not depend on the database driver
+              desc: domain must not depend on the database driver
             - pkg: github.com/redis
-              desc: model must not depend on Redis
+              desc: domain must not depend on Redis
+            - pkg: github.com/golang-jwt
+              desc: domain must not depend on the JWT library
+            - pkg: golang.org/x/crypto
+              desc: domain must not depend on cryptography libraries
+            - pkg: rental-management/internal/usecase
+              desc: domain must not import use cases
             - pkg: rental-management/internal/adapter
-              desc: model must not import an adapter
-            - pkg: rental-management/internal/service
-              desc: model must not import service
-            - pkg: rental-management/internal/handler
-              desc: model must not import handler
-            - pkg: rental-management/internal/router
-              desc: model must not import router
-        # service holds the use cases and pure rules; it declares the ports it needs and never sees a driver.
-        layer-service:
+              desc: domain must not import adapters
+            - pkg: rental-management/internal/app
+              desc: domain must not import the wiring layer
+            - pkg: rental-management/pkg/apperr
+              desc: domain returns its own errors, the HTTP adapter maps them
+            - pkg: rental-management/pkg/httpx
+              desc: domain must not import HTTP helpers
+            - pkg: rental-management/pkg/db
+              desc: domain must not import the database helpers
+            - pkg: rental-management/pkg/mail
+              desc: domain must not import the mail package
+            - pkg: rental-management/pkg/storage
+              desc: domain must not import the storage package
+            - pkg: rental-management/pkg/imaging
+              desc: domain must not import the imaging package
+        # usecase is the application rules: it declares the ports it needs and never sees a framework or a driver.
+        layer-usecase:
           files:
-            - "**/internal/service/**"
+            - "**/internal/usecase/**"
           deny:
             - pkg: github.com/gin-gonic/gin
-              desc: service must not depend on the HTTP framework
+              desc: use cases must not depend on the HTTP framework
             - pkg: github.com/jackc
-              desc: service must not depend on the database driver
+              desc: use cases must not depend on the database driver
             - pkg: github.com/redis
-              desc: service must not depend on Redis
+              desc: use cases must not depend on Redis
+            - pkg: github.com/golang-jwt
+              desc: use cases must not depend on the JWT library
+            - pkg: golang.org/x/crypto
+              desc: use cases must not depend on cryptography libraries
             - pkg: rental-management/internal/adapter
-              desc: service declares its own repository interfaces and must not import an adapter
-            - pkg: rental-management/internal/handler
-              desc: service must not import handler
-            - pkg: rental-management/internal/router
-              desc: service must not import router
-        # repository is the only place that talks to the database and Redis.
-        layer-repository:
+              desc: use cases declare ports and must not import adapters
+            - pkg: rental-management/internal/app
+              desc: use cases must not import the wiring layer
+            - pkg: rental-management/pkg/apperr
+              desc: use cases return domain errors, the HTTP adapter maps them
+            - pkg: rental-management/pkg/httpx
+              desc: use cases must not import HTTP helpers
+            - pkg: rental-management/pkg/db
+              desc: use cases must not import the database helpers
+            - pkg: rental-management/pkg/mail
+              desc: use cases must not import the mail package
+            - pkg: rental-management/pkg/storage
+              desc: use cases must not import the storage package
+            - pkg: rental-management/pkg/imaging
+              desc: use cases must not import the imaging package
+        # The adapters behind the ports implement them structurally: they may use the domain, never the use cases.
+        adapter-infrastructure:
           files:
             - "**/internal/adapter/persistence/**"
             - "**/internal/adapter/redis/**"
+            - "**/internal/adapter/security/**"
+            - "**/internal/adapter/mail/**"
           deny:
             - pkg: github.com/gin-gonic/gin
-              desc: repository must not depend on the HTTP framework
-            - pkg: rental-management/internal/service
-              desc: repository must not import service
-            - pkg: rental-management/internal/handler
-              desc: repository must not import handler
-            - pkg: rental-management/internal/router
-              desc: repository must not import router
-        # handler turns HTTP into service calls; it never touches the database or Redis.
-        layer-handler:
+              desc: infrastructure adapters must not depend on the HTTP framework
+            - pkg: rental-management/internal/usecase
+              desc: infrastructure adapters implement the ports structurally and must not import use cases
+            - pkg: rental-management/internal/app
+              desc: adapters must not import the wiring layer
+        # The HTTP adapter turns HTTP into use case calls; it never touches the database or Redis (its integration
+        # tests wire the real adapters, so test files are left out).
+        adapter-http:
           files:
-            - "**/internal/handler/**"
+            - "**/internal/adapter/http/**"
+            - "!$test"
           deny:
             - pkg: github.com/jackc
-              desc: handler must not depend on the database driver
+              desc: the HTTP adapter must not depend on the database driver
             - pkg: github.com/redis
-              desc: handler must not depend on Redis
-            - pkg: rental-management/internal/adapter
-              desc: handler must not import an adapter
+              desc: the HTTP adapter must not depend on Redis
+            - pkg: rental-management/internal/adapter/persistence
+              desc: the HTTP adapter must not import the persistence adapter
+            - pkg: rental-management/internal/adapter/redis
+              desc: the HTTP adapter must not import the Redis adapter
+            - pkg: rental-management/internal/app
+              desc: adapters must not import the wiring layer
         # feature modules never import each other, the layers or the wiring; they share only pkg and config.
         location-is-isolated:
           files:
@@ -96,6 +132,18 @@ linters:
               desc: modules must not import other modules
             - pkg: rental-management/internal/app
               desc: modules must not import the wiring layer
+            - pkg: rental-management/internal/usecase
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/domain
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/http
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/redis
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/security
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/mail
+              desc: modules do not use the new layers until they are migrated
         property-is-isolated:
           files:
             - "**/internal/modules/property/**"
@@ -104,6 +152,18 @@ linters:
               desc: modules must not import other modules
             - pkg: rental-management/internal/app
               desc: modules must not import the wiring layer
+            - pkg: rental-management/internal/usecase
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/domain
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/http
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/redis
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/security
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/adapter/mail
+              desc: modules do not use the new layers until they are migrated
   exclusions:
     presets:
       - std-error-handling
