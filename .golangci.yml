@@ -133,7 +133,9 @@ linters:
               desc: modules must not import the wiring layer
             - pkg: rental-management/internal/usecase
               desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/domain
+            - pkg: rental-management/internal/domain/identity
+              desc: modules do not use the new layers until they are migrated
+            - pkg: rental-management/internal/domain/location
               desc: modules do not use the new layers until they are migrated
             - pkg: rental-management/internal/adapter/http
               desc: modules do not use the new layers until they are migrated

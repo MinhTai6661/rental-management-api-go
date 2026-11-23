@@ -3,45 +3,20 @@ package property
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	sqlcgen "rental-management/internal/adapter/persistence/postgres/sqlc"
+	domain "rental-management/internal/domain/property"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/storage"
 )
-
-// mediaPrefix is the start of every key this module stores; the public route serves nothing else.
-const mediaPrefix = "property/"
-
-// MediaOwner is what a picture belongs to: a room or a building. Both work the same way.
-type MediaOwner struct {
-	room bool
-	id   uuid.UUID
-}
-
-// RoomMedia is the pictures of a room.
-func RoomMedia(id uuid.UUID) MediaOwner { return MediaOwner{room: true, id: id} }
-
-// BuildingMedia is the pictures of a building.
-func BuildingMedia(id uuid.UUID) MediaOwner { return MediaOwner{id: id} }
-
-// ids gives the two owner columns of the media queries: the one that matches is set, the other is nil.
-func (o MediaOwner) ids() (room, building *uuid.UUID) {
-	if o.room {
-		return &o.id, nil
-	}
-	return nil, &o.id
-}
 
 // Upload is a picture a client sent.
 type Upload struct {
@@ -62,19 +37,12 @@ func (s *Service) MaxUploadBytes() int { return s.opts.MaxUploadBytes }
 
 // ---- keys and staging ----
 
-// mediaKeys builds the storage keys of a picture and its thumbnail from the date and 16 random bytes. The name is
-// unguessable and never reused, so the files can be cached for ever.
-func mediaKeys(now time.Time, random [16]byte, ext string) (file, thumb string) {
-	base := fmt.Sprintf("%s%04d/%02d/%s", mediaPrefix, now.Year(), int(now.Month()), hex.EncodeToString(random[:]))
-	return base + "." + ext, base + "_thumb.jpg"
-}
-
 func (s *Service) newMediaKeys(ext string) (file, thumb string, err error) {
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
 		return "", "", err
 	}
-	file, thumb = mediaKeys(s.now().UTC(), random, ext)
+	file, thumb = domain.MediaKeys(s.now().UTC(), random, ext)
 	return file, thumb, nil
 }
 
@@ -130,14 +98,14 @@ func (s *Service) imageError(err error) error {
 // lockOwner locks the room or building of the landlord and says whether a room follows its building's pictures; 404
 // when it is not theirs.
 func lockOwner(ctx context.Context, q *sqlcgen.Queries, landlordID uuid.UUID, o MediaOwner) (follows bool, err error) {
-	if o.room {
-		row, err := q.GetRoomForUpdate(ctx, sqlcgen.GetRoomForUpdateParams{ID: o.id, LandlordID: landlordID})
+	if o.IsRoom() {
+		row, err := q.GetRoomForUpdate(ctx, sqlcgen.GetRoomForUpdateParams{ID: o.ID(), LandlordID: landlordID})
 		if err != nil {
 			return false, notFoundOr(err)
 		}
 		return row.InheritsMedia, nil
 	}
-	_, err = q.GetBuildingForUpdate(ctx, sqlcgen.GetBuildingForUpdateParams{ID: o.id, LandlordID: landlordID})
+	_, err = q.GetBuildingForUpdate(ctx, sqlcgen.GetBuildingForUpdateParams{ID: o.ID(), LandlordID: landlordID})
 	return false, notFoundOr(err)
 }
 
@@ -149,10 +117,10 @@ func notFoundOr(err error) error {
 }
 
 func ownerMedia(ctx context.Context, q *sqlcgen.Queries, o MediaOwner) ([]sqlcgen.Medium, error) {
-	if o.room {
-		return q.ListMediaOfRooms(ctx, []uuid.UUID{o.id})
+	if o.IsRoom() {
+		return q.ListMediaOfRooms(ctx, []uuid.UUID{o.ID()})
 	}
-	return q.ListMediaOfBuildings(ctx, []uuid.UUID{o.id})
+	return q.ListMediaOfBuildings(ctx, []uuid.UUID{o.ID()})
 }
 
 // owns is a cheap ownership check done before the expensive image work, so a stranger's request costs nothing.
@@ -160,10 +128,10 @@ func (s *Service) owns(ctx context.Context, landlordID uuid.UUID, o MediaOwner) 
 	q := s.store.Queries()
 	var ok bool
 	var err error
-	if o.room {
-		ok, err = q.OwnsRoom(ctx, sqlcgen.OwnsRoomParams{ID: o.id, LandlordID: landlordID})
+	if o.IsRoom() {
+		ok, err = q.OwnsRoom(ctx, sqlcgen.OwnsRoomParams{ID: o.ID(), LandlordID: landlordID})
 	} else {
-		ok, err = q.OwnsBuilding(ctx, sqlcgen.OwnsBuildingParams{ID: o.id, LandlordID: landlordID})
+		ok, err = q.OwnsBuilding(ctx, sqlcgen.OwnsBuildingParams{ID: o.ID(), LandlordID: landlordID})
 	}
 	if err != nil {
 		return err
@@ -193,19 +161,19 @@ func refreshCover(ctx context.Context, q *sqlcgen.Queries, o MediaOwner) ([]uuid
 			}
 		}
 	}
-	if o.room {
-		return nil, q.SetRoomCover(ctx, sqlcgen.SetRoomCoverParams{ID: o.id, CoverKey: key, CoverThumbKey: thumb})
+	if o.IsRoom() {
+		return nil, q.SetRoomCover(ctx, sqlcgen.SetRoomCoverParams{ID: o.ID(), CoverKey: key, CoverThumbKey: thumb})
 	}
-	if err := q.SetBuildingCover(ctx, sqlcgen.SetBuildingCoverParams{ID: o.id, CoverKey: key, CoverThumbKey: thumb}); err != nil {
+	if err := q.SetBuildingCover(ctx, sqlcgen.SetBuildingCoverParams{ID: o.ID(), CoverKey: key, CoverThumbKey: thumb}); err != nil {
 		return nil, err
 	}
-	return q.PushBuildingCover(ctx, o.id)
+	return q.PushBuildingCover(ctx, o.ID())
 }
 
 // changed tells the observer which rooms show other pictures now: the room itself, or the rooms following a building.
 func (s *Service) mediaChanged(ctx context.Context, tx pgx.Tx, o MediaOwner, followers []uuid.UUID) error {
-	if o.room {
-		return s.contentChanged(ctx, tx, []uuid.UUID{o.id})
+	if o.IsRoom() {
+		return s.contentChanged(ctx, tx, []uuid.UUID{o.ID()})
 	}
 	return s.contentChanged(ctx, tx, followers)
 }
@@ -272,14 +240,14 @@ func (s *Service) AddMedia(ctx context.Context, landlordID uuid.UUID, o MediaOwn
 		if limitReached(&limit, len(media), 1) {
 			return apperr.Conflict(apperr.CodeMediaLimitReached).WithParams(map[string]string{"max": strconv.Itoa(limit)})
 		}
-		roomID, buildingID := o.ids()
+		roomID, buildingID := ownerIDs(o)
 		if kind == KindCover {
 			if err := q.DemoteMediaCovers(ctx, sqlcgen.DemoteMediaCoversParams{RoomID: roomID, BuildingID: buildingID}); err != nil {
 				return err
 			}
 		}
 		if follows {
-			if err := q.StopFollowingBuildingMedia(ctx, o.id); err != nil {
+			if err := q.StopFollowingBuildingMedia(ctx, o.ID()); err != nil {
 				return err
 			}
 		}
@@ -334,7 +302,7 @@ func (s *Service) ReplaceMediaFile(ctx context.Context, landlordID uuid.UUID, o 
 			return apperr.NotFound()
 		}
 		old = []string{media[idx].FileKey, media[idx].ThumbKey}
-		roomID, buildingID := o.ids()
+		roomID, buildingID := ownerIDs(o)
 		row, err = q.ReplaceMediaFile(ctx, sqlcgen.ReplaceMediaFileParams{
 			ID: mediaID, RoomID: roomID, BuildingID: buildingID, FileKey: st.file, ThumbKey: st.thumb,
 			ContentType: st.result.ContentType, SizeBytes: int32(len(st.result.Data)), //nolint:gosec // at most MEDIA_MAX_UPLOAD_BYTES
@@ -389,7 +357,7 @@ func (s *Service) ArrangeMedia(ctx context.Context, landlordID uuid.UUID, o Medi
 		if failure := checkArrangement(current, rule); failure != "" {
 			return apperr.Invalid(apperr.Field{Name: "items", Rule: failure})
 		}
-		roomID, buildingID := o.ids()
+		roomID, buildingID := ownerIDs(o)
 		// The partial unique index allows one cover: demote the old one before any new one is set.
 		if err := q.DemoteMediaCovers(ctx, sqlcgen.DemoteMediaCoversParams{RoomID: roomID, BuildingID: buildingID}); err != nil {
 			return err
@@ -426,7 +394,7 @@ func (s *Service) DeleteMedia(ctx context.Context, landlordID uuid.UUID, o Media
 		if _, err := lockOwner(ctx, q, landlordID, o); err != nil {
 			return err
 		}
-		roomID, buildingID := o.ids()
+		roomID, buildingID := ownerIDs(o)
 		gone, err := q.DeleteMedia(ctx, sqlcgen.DeleteMediaParams{ID: mediaID, RoomID: roomID, BuildingID: buildingID})
 		if err != nil {
 			return notFoundOr(err)

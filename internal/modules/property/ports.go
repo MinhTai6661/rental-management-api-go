@@ -38,13 +38,6 @@ func (NoGuards) Blockers(context.Context, pgx.Tx, []uuid.UUID) (map[uuid.UUID]Bl
 	return nil, nil
 }
 
-// StatusChange is a room that moved from one status to another; From is "" for a new room.
-type StatusChange struct {
-	RoomID uuid.UUID
-	From   Status
-	To     Status
-}
-
 // RoomObserver is told about changes of rooms, in the transaction that makes them, so a later module can react
 // atomically (open or close a blank contract, send a listing back to draft).
 type RoomObserver interface {
