@@ -14,7 +14,6 @@ import (
 	"rental-management/internal/adapter/security"
 	"rental-management/internal/adapter/snapshot/locationdata"
 	domain "rental-management/internal/domain/identity"
-	"rental-management/internal/modules/property"
 	usecase "rental-management/internal/usecase/identity"
 	locationuc "rental-management/internal/usecase/location"
 	"rental-management/pkg/db"
@@ -90,7 +89,7 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 		}
 		// The seed stores no pictures, so it gets an in-memory store instead of touching the media directory.
 		properties := newProperty(cfg, log, pool, storage.NewMemory(cfg.MediaPublicBaseURL))
-		if err := property.SeedDemo(ctx, properties, ids["landlord@rental.test"]); err != nil {
+		if err := properties.seeder.SeedDemo(ctx, ids["landlord@rental.test"]); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintln(out, "seeded the demo property data")

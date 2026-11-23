@@ -25,8 +25,7 @@ linters:
           deny:
             - pkg: rental-management/internal
               desc: shared code must not import business code or the wiring layer
-        # Clean architecture for the contexts that are migrated (identity, location): adapter -> usecase -> domain.
-        # property is still a feature module in internal/modules until its step.
+        # Clean architecture for every context (identity, location, property): adapter -> usecase -> domain.
         #
         # domain is the enterprise rules: standard library, uuid and the pure pkg/authz only.
         layer-domain:
@@ -100,6 +99,8 @@ linters:
             - "**/internal/adapter/security/**"
             - "**/internal/adapter/mail/**"
             - "**/internal/adapter/snapshot/**"
+            - "**/internal/adapter/filestore/**"
+            - "**/internal/adapter/imageproc/**"
           deny:
             - pkg: github.com/gin-gonic/gin
               desc: infrastructure adapters must not depend on the HTTP framework
@@ -124,27 +125,6 @@ linters:
               desc: the HTTP adapter must not import the Redis adapter
             - pkg: rental-management/internal/app
               desc: adapters must not import the wiring layer
-        # property is a feature module: it imports no other module, no layer and not the wiring; it shares only pkg and config.
-        property-is-isolated:
-          files:
-            - "**/internal/modules/property/**"
-          deny:
-            - pkg: rental-management/internal/app
-              desc: modules must not import the wiring layer
-            - pkg: rental-management/internal/usecase
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/domain/identity
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/domain/location
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/adapter/http
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/adapter/redis
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/adapter/security
-              desc: modules do not use the new layers until they are migrated
-            - pkg: rental-management/internal/adapter/mail
-              desc: modules do not use the new layers until they are migrated
   exclusions:
     presets:
       - std-error-handling

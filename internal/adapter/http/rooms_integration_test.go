@@ -1,6 +1,6 @@
 //go:build integration
 
-package property
+package httpadapter_test
 
 import (
 	"context"
@@ -11,25 +11,26 @@ import (
 
 	"github.com/google/uuid"
 
+	domain "rental-management/internal/domain/property"
 	"rental-management/pkg/apperr"
 )
 
 // room creates a room through the API and returns it.
-func (e *env) roomAPI(bearer string, body map[string]any) RoomDetail {
+func (e *propertyEnv) roomAPI(bearer string, body map[string]any) RoomDetail {
 	e.t.Helper()
 	w := e.call(http.MethodPost, "/v1/rooms", body, bearer)
 	expectStatus(e.t, w, http.StatusCreated)
 	return decodeData[RoomDetail](e.t, w)
 }
 
-func (e *env) getRoom(bearer string, id uuid.UUID) RoomDetail {
+func (e *propertyEnv) getRoom(bearer string, id uuid.UUID) RoomDetail {
 	e.t.Helper()
 	w := e.call(http.MethodGet, "/v1/rooms/"+id.String(), nil, bearer)
 	expectStatus(e.t, w, http.StatusOK)
 	return decodeData[RoomDetail](e.t, w)
 }
 
-func (e *env) putRoom(bearer string, id uuid.UUID, body map[string]any) RoomDetail {
+func (e *propertyEnv) putRoom(bearer string, id uuid.UUID, body map[string]any) RoomDetail {
 	e.t.Helper()
 	w := e.call(http.MethodPut, "/v1/rooms/"+id.String(), body, bearer)
 	expectStatus(e.t, w, http.StatusOK)
@@ -37,7 +38,7 @@ func (e *env) putRoom(bearer string, id uuid.UUID, body map[string]any) RoomDeta
 }
 
 // fullBuilding makes a building with every default set and three charges.
-func (e *env) fullBuilding(bearer, name string) BuildingDetail {
+func (e *propertyEnv) fullBuilding(bearer, name string) BuildingDetail {
 	return e.building(bearer, name, map[string]any{
 		"ward_code": e.ward, "description": "Quiet", "price_vnd": 2_500_000, "area_square_meters": 20,
 		"minimum_rental_period": 2, "rental_period_unit": "month",
@@ -54,7 +55,7 @@ type roomList struct {
 	} `json:"meta"`
 }
 
-func (e *env) listRooms(bearer, query string) roomList {
+func (e *propertyEnv) listRooms(bearer, query string) roomList {
 	e.t.Helper()
 	w := e.call(http.MethodGet, "/v1/rooms"+query, nil, bearer)
 	expectStatus(e.t, w, http.StatusOK)
@@ -74,7 +75,7 @@ func roomNamesOf(l roomList) []string {
 }
 
 func TestRoomOutsideABuildingNeedsItsOwnAddressAndPrice(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	for name, tc := range map[string]struct {
 		body  map[string]any
 		field string
@@ -104,14 +105,14 @@ func TestRoomOutsideABuildingNeedsItsOwnAddressAndPrice(t *testing.T) {
 }
 
 func TestRoomCRUDRoundTrip(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	created := e.roomAPI("landlord-a", map[string]any{
 		"name": "  A1 ", "ward_code": e.ward, "address_detail": " 12 Le Loi ", "price_vnd": 1_800_000, "area_square_meters": 18.456,
 		"minimum_rental_period": 3, "rental_period_unit": "month", "description": "Ground floor",
 		"charges": []map[string]any{charge("Điện", "electricity", 3500, "per_kwh")},
 	})
 	if created.Name != "A1" || created.Status != "available" || created.DisplayOrder != 1 || created.Building != nil || created.AddressDetail != "12 Le Loi" {
-		t.Errorf("created %+v", created.RoomSummary)
+		t.Errorf("created %+v", created.RoomSummaryView)
 	}
 	if created.PriceVND != 1_800_000 || *created.AreaSquareMeters != 18.46 || created.MinimumRentalPeriod != 3 || created.RentalPeriodUnit != "month" ||
 		created.Description == nil || *created.Description != "Ground floor" || len(created.Inherits) != 0 {
@@ -127,7 +128,7 @@ func TestRoomCRUDRoundTrip(t *testing.T) {
 	// PUT replaces the scalar fields; the status and the charges, left out, stay.
 	updated := e.putRoom("landlord-a", created.ID, map[string]any{"name": "A2", "address_detail": "99 Tran Phu", "price_vnd": 2_000_000})
 	if updated.Name != "A2" || updated.PriceVND != 2_000_000 || updated.AddressDetail != "99 Tran Phu" || updated.Status != "available" {
-		t.Errorf("updated %+v", updated.RoomSummary)
+		t.Errorf("updated %+v", updated.RoomSummaryView)
 	}
 	if updated.Ward != nil || updated.AreaSquareMeters != nil || updated.Description != nil || updated.MinimumRentalPeriod != 1 {
 		t.Errorf("fields left out of a PUT are cleared: %+v", updated)
@@ -145,7 +146,7 @@ func TestRoomCRUDRoundTrip(t *testing.T) {
 }
 
 func TestRoomsAreOwnerOnly(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1_000_000})
 	mine := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P1"})
 	id := mine.ID.String()
@@ -197,7 +198,7 @@ func TestRoomsAreOwnerOnly(t *testing.T) {
 }
 
 func TestRoomFollowsItsBuilding(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.fullBuilding("landlord-a", "Nha A")
 
 	// Nothing of its own: it follows every part and takes the building's address, whatever it typed.
@@ -219,7 +220,7 @@ func TestRoomFollowsItsBuilding(t *testing.T) {
 	// Its own rent: price is the one part that does not follow.
 	own := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P2", "price_vnd": 3_000_000})
 	if own.PriceVND != 3_000_000 || slices.Contains(own.Inherits, "price") || !slices.Contains(own.Inherits, "area") {
-		t.Errorf("own price %+v", own.RoomSummary)
+		t.Errorf("own price %+v", own.RoomSummaryView)
 	}
 	// Its own charges: they are kept and the room stops following the building's.
 	ownCharges := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P3", "charges": []map[string]any{charge("Wifi", "internet", 1, "per_period")}})
@@ -229,7 +230,7 @@ func TestRoomFollowsItsBuilding(t *testing.T) {
 	// An explicit list wins over what the request carries.
 	listed := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P4", "price_vnd": 9, "inherit": []string{"price"}})
 	if listed.PriceVND != 2_500_000 || !slices.Equal(listed.Inherits, []string{"price"}) {
-		t.Errorf("listed %+v", listed.RoomSummary)
+		t.Errorf("listed %+v", listed.RoomSummaryView)
 	}
 	// A building without rent cannot be followed for it.
 	bare := e.building("landlord-a", "Bare", nil)
@@ -240,7 +241,7 @@ func TestRoomFollowsItsBuilding(t *testing.T) {
 }
 
 func TestRoomUpdateChangesWhatItFollows(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.fullBuilding("landlord-a", "Nha A")
 	room := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P1"})
 	templateCopy := room.Charges[0]
@@ -248,7 +249,7 @@ func TestRoomUpdateChangesWhatItFollows(t *testing.T) {
 	// Own price and an explicit follow list: the room leaves the other parts, but keeps its charges as its own.
 	got := e.putRoom("landlord-a", room.ID, map[string]any{"building_id": b.ID, "name": "P1", "price_vnd": 3_300_000, "inherit": []string{"area"}})
 	if got.PriceVND != 3_300_000 || !slices.Equal(got.Inherits, []string{"area"}) {
-		t.Fatalf("got %+v", got.RoomSummary)
+		t.Fatalf("got %+v", got.RoomSummaryView)
 	}
 	if len(got.Charges) != 2 || got.Charges[0].FollowsBuilding || got.Charges[0].ID != templateCopy.ID {
 		t.Errorf("charges stay as the room's own: %+v", got.Charges)
@@ -271,13 +272,13 @@ func TestRoomUpdateChangesWhatItFollows(t *testing.T) {
 	// Back to following everything: the building's values and charge copies return.
 	got = e.putRoom("landlord-a", room.ID, map[string]any{"building_id": b.ID, "name": "P1", "inherit": []string{"price", "area", "rental_period", "description", "charges", "media"}})
 	if got.PriceVND != 2_500_000 || len(got.Charges) != 2 || !got.Charges[0].FollowsBuilding || len(got.Inherits) != 6 {
-		t.Errorf("following again %+v charges %+v", got.RoomSummary, got.Charges)
+		t.Errorf("following again %+v charges %+v", got.RoomSummaryView, got.Charges)
 	}
 
 	// Leaving the building: nothing follows, the room keeps the values it holds and needs its own address.
 	got = e.putRoom("landlord-a", room.ID, map[string]any{"name": "P1", "address_detail": "Somewhere", "price_vnd": 700})
 	if got.Building != nil || len(got.Inherits) != 0 || got.PriceVND != 700 || got.AddressDetail != "Somewhere" {
-		t.Errorf("outside %+v", got.RoomSummary)
+		t.Errorf("outside %+v", got.RoomSummaryView)
 	}
 	if len(got.Charges) != 2 || got.Charges[0].FollowsBuilding {
 		t.Errorf("the copies become its own: %+v", got.Charges)
@@ -287,12 +288,12 @@ func TestRoomUpdateChangesWhatItFollows(t *testing.T) {
 	got = e.putRoom("landlord-a", room.ID, map[string]any{"building_id": b.ID, "name": "P1"})
 	if got.Building == nil || got.PriceVND != 2_500_000 || !slices.Equal(got.Inherits, []string{"price", "area", "rental_period", "description"}) ||
 		len(got.Charges) != 2 || got.Charges[0].FollowsBuilding {
-		t.Errorf("back inside %+v charges %+v", got.RoomSummary, got.Charges)
+		t.Errorf("back inside %+v charges %+v", got.RoomSummaryView, got.Charges)
 	}
 }
 
 func TestRoomNamesAreUniquePerBuilding(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b1 := e.building("landlord-a", "One", map[string]any{"price_vnd": 1})
 	b2 := e.building("landlord-a", "Two", map[string]any{"price_vnd": 1})
 	e.roomAPI("landlord-a", map[string]any{"building_id": b1.ID, "name": "P1"})
@@ -324,7 +325,7 @@ func TestRoomNamesAreUniquePerBuilding(t *testing.T) {
 }
 
 func TestRoomListFiltersSortAndPages(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "Nha", map[string]any{"price_vnd": 2_000_000, "area_square_meters": 30, "ward_code": e.ward})
 	solo := func(name string, price int, extra map[string]any) {
 		body := map[string]any{"name": name, "address_detail": "x", "price_vnd": price}
@@ -381,18 +382,18 @@ func TestRoomListFiltersSortAndPages(t *testing.T) {
 }
 
 func TestRoomStatusAndDeleteAreGuarded(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	rec := &recorder{}
-	e.svc.observer = rec
+	e.observer.set(rec)
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	busy := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "Busy", "status": "rented"})
 	free := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "Free"})
 	listed := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "Listed"})
-	if len(rec.statuses) != 1 || rec.statuses[0] != (StatusChange{RoomID: busy.ID, To: StatusRented}) {
+	if len(rec.statuses) != 1 || rec.statuses[0] != (domain.StatusChange{RoomID: busy.ID, To: domain.StatusRented}) {
 		t.Errorf("creating a rented room tells the observer: %+v", rec.statuses)
 	}
 	rec.statuses, rec.content = nil, nil
-	e.svc.guards = fakeGuards{busy.ID: {ActiveContract: true}, listed.ID: {OpenListing: true}}
+	e.guards.set(fakeGuards{busy.ID: {ActiveContract: true}, listed.ID: {OpenListing: true}})
 	same := func(r RoomDetail, status string) map[string]any {
 		return map[string]any{"building_id": b.ID, "name": r.Name, "status": status}
 	}
@@ -406,7 +407,7 @@ func TestRoomStatusAndDeleteAreGuarded(t *testing.T) {
 	if got := e.putRoom("landlord-a", free.ID, same(free, "rented")); got.Status != "rented" {
 		t.Errorf("status %s", got.Status)
 	}
-	if len(rec.statuses) != 1 || rec.statuses[0] != (StatusChange{RoomID: free.ID, From: StatusAvailable, To: StatusRented}) {
+	if len(rec.statuses) != 1 || rec.statuses[0] != (domain.StatusChange{RoomID: free.ID, From: domain.StatusAvailable, To: domain.StatusRented}) {
 		t.Errorf("status events %+v", rec.statuses)
 	}
 
@@ -452,9 +453,9 @@ func TestRoomStatusAndDeleteAreGuarded(t *testing.T) {
 }
 
 func TestRoomObserverHearsContentChanges(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	rec := &recorder{}
-	e.svc.observer = rec
+	e.observer.set(rec)
 	b := e.fullBuilding("landlord-a", "B")
 	room := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P1"})
 	body := func(extra map[string]any) map[string]any {
@@ -494,7 +495,7 @@ func TestRoomObserverHearsContentChanges(t *testing.T) {
 }
 
 func TestRoomReorder(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	mk := func(bearer, name string) uuid.UUID {
 		return e.roomAPI(bearer, map[string]any{"name": name, "address_detail": "x", "price_vnd": 1}).ID
 	}
@@ -524,7 +525,7 @@ func TestRoomReorder(t *testing.T) {
 
 func TestRoomPlanLimit(t *testing.T) {
 	limit := 2
-	e := newEnv(t, fakePlans{rooms: &limit})
+	e := newPropertyEnv(t, fakePlans{rooms: &limit})
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P1"})
 	e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P2"})
@@ -540,7 +541,7 @@ func TestRoomPlanLimit(t *testing.T) {
 }
 
 func TestRoomFollowsTheBuildingCover(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	ctx := context.Background()
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	if _, err := e.pool.Exec(ctx, `

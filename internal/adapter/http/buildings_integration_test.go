@@ -1,6 +1,6 @@
 //go:build integration
 
-package property
+package httpadapter_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	usecase "rental-management/internal/usecase/property"
 	"rental-management/pkg/apperr"
 )
 
@@ -20,7 +21,7 @@ func charge(name, kind string, amount int64, unit string) map[string]any {
 }
 
 func TestBuildingCRUDRoundTrip(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 
 	created := e.building("landlord-a", "  Nhà trọ A ", map[string]any{
 		"ward_code": e.ward, "description": "Quiet", "price_vnd": 2_500_000, "area_square_meters": 18.456,
@@ -28,13 +29,13 @@ func TestBuildingCRUDRoundTrip(t *testing.T) {
 		"charges": []map[string]any{charge("Điện", "electricity", 3500, "per_kwh"), charge("Nước", "water", 20000, "per_cubic_meter")},
 	})
 	if created.Name != "Nhà trọ A" || created.DisplayOrder != 1 || created.RoomsCount != 0 {
-		t.Errorf("unexpected building %+v", created.BuildingSummary)
+		t.Errorf("unexpected building %+v", created.BuildingSummaryView)
 	}
 	if created.Ward == nil || created.Ward.Name != "Ba Dinh" || created.Ward.Province.Name != "Ha Noi" {
 		t.Errorf("ward %+v", created.Ward)
 	}
 	if *created.AreaSquareMeters != 18.46 || *created.MinimumRentalPeriod != 3 || *created.PriceVND != 2_500_000 {
-		t.Errorf("values %+v", created.BuildingSummary)
+		t.Errorf("values %+v", created.BuildingSummaryView)
 	}
 	if len(created.Charges) != 2 || created.Charges[0].Name != "Điện" || created.Charges[1].DisplayOrder != 2 || created.Media == nil {
 		t.Errorf("charges %+v media %v", created.Charges, created.Media)
@@ -53,10 +54,10 @@ func TestBuildingCRUDRoundTrip(t *testing.T) {
 	expectStatus(t, w, http.StatusOK)
 	updated := decodeData[BuildingDetail](t, w)
 	if updated.Name != "Nhà trọ A2" || updated.AddressDetail != "99 Tran Phu" || *updated.PriceVND != 2_700_000 {
-		t.Errorf("updated %+v", updated.BuildingSummary)
+		t.Errorf("updated %+v", updated.BuildingSummaryView)
 	}
 	if updated.Ward != nil || updated.AreaSquareMeters != nil || updated.MinimumRentalPeriod != nil || updated.Description != nil {
-		t.Errorf("fields left out of a PUT are cleared: %+v", updated.BuildingSummary)
+		t.Errorf("fields left out of a PUT are cleared: %+v", updated.BuildingSummaryView)
 	}
 	if len(updated.Charges) != 2 {
 		t.Errorf("charges left out of the body are kept, got %d", len(updated.Charges))
@@ -67,7 +68,7 @@ func TestBuildingCRUDRoundTrip(t *testing.T) {
 }
 
 func TestBuildingsAreOwnerOnly(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	mine := e.building("landlord-a", "Mine", nil)
 	id := mine.ID.String()
 
@@ -114,7 +115,7 @@ func TestBuildingsAreOwnerOnly(t *testing.T) {
 }
 
 func TestBuildingValidation(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	e.building("landlord-a", "Alpha", nil)
 
 	cases := map[string]struct {
@@ -156,7 +157,7 @@ func TestBuildingValidation(t *testing.T) {
 }
 
 func TestBuildingChargesSync(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "A", map[string]any{
 		"charges": []map[string]any{charge("Power", "electricity", 3500, "per_kwh"), charge("Water", "water", 20000, "per_cubic_meter")},
 	})
@@ -199,7 +200,7 @@ func TestBuildingChargesSync(t *testing.T) {
 }
 
 func TestBuildingListFiltersSortAndPages(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	e.building("landlord-a", "Charlie", map[string]any{"ward_code": e.ward})
 	e.building("landlord-a", "alpha", nil)
 	e.building("landlord-a", "Bravo 50%", nil)
@@ -254,7 +255,7 @@ func TestBuildingListFiltersSortAndPages(t *testing.T) {
 }
 
 func TestBuildingDeleteIsBlockedByRooms(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	full := e.building("landlord-a", "Full", nil)
 	empty := e.building("landlord-a", "Empty", nil)
 	room := e.room(e.landlA, full.ID, "P1", false)
@@ -300,7 +301,7 @@ func TestBuildingDeleteIsBlockedByRooms(t *testing.T) {
 }
 
 func TestBuildingDeleteRemovesItsPictures(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "Pics", nil)
 	ctx := context.Background()
 	for _, key := range []string{"property/2026/11/a.webp", "property/2026/11/a_thumb.jpg"} {
@@ -329,7 +330,7 @@ func TestBuildingDeleteRemovesItsPictures(t *testing.T) {
 }
 
 func TestBuildingReorder(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	a := e.building("landlord-a", "A", nil)
 	b := e.building("landlord-a", "B", nil)
 	c := e.building("landlord-a", "C", nil)
@@ -366,7 +367,7 @@ func TestBuildingReorder(t *testing.T) {
 
 func TestBuildingPlanLimit(t *testing.T) {
 	limit := 1
-	e := newEnv(t, fakePlans{buildings: &limit})
+	e := newPropertyEnv(t, fakePlans{buildings: &limit})
 	first := e.building("landlord-a", "First", nil)
 	body := expectError(t, e.call(http.MethodPost, "/v1/buildings", map[string]any{"name": "Second", "address_detail": "x"}, "landlord-a"),
 		http.StatusConflict, apperr.CodeBuildingLimit)
@@ -383,7 +384,7 @@ func TestBuildingPlanLimit(t *testing.T) {
 }
 
 func TestBuildingPriceCannotBeRemovedWhileRoomsFollowIt(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "A", map[string]any{"price_vnd": 2_000_000})
 	e.room(e.landlA, b.ID, "P1", true)
 	e.room(e.landlA, b.ID, "P2", false)
@@ -398,7 +399,7 @@ func TestBuildingPriceCannotBeRemovedWhileRoomsFollowIt(t *testing.T) {
 }
 
 func TestCopyBuilding(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	src := e.building("landlord-a", "Source", map[string]any{
 		"ward_code": e.ward, "description": "Quiet", "price_vnd": 2_500_000, "area_square_meters": 20,
 		"minimum_rental_period": 2, "rental_period_unit": "day",
@@ -411,11 +412,11 @@ func TestCopyBuilding(t *testing.T) {
 	result := decodeData[CopyResult](t, w)
 	cp := result.Building
 	if result.RoomsCopied != 0 || cp.ID == src.ID || cp.Name != "Source copy" || cp.DisplayOrder != 2 || cp.RoomsCount != 0 {
-		t.Errorf("copy %+v rooms_copied %d", cp.BuildingSummary, result.RoomsCopied)
+		t.Errorf("copy %+v rooms_copied %d", cp.BuildingSummaryView, result.RoomsCopied)
 	}
 	if cp.Ward == nil || cp.AddressDetail != "12 Le Loi" || *cp.PriceVND != 2_500_000 || *cp.AreaSquareMeters != 20 ||
 		*cp.MinimumRentalPeriod != 2 || *cp.RentalPeriodUnit != "day" || *cp.Description != "Quiet" {
-		t.Errorf("details not copied: %+v", cp.BuildingSummary)
+		t.Errorf("details not copied: %+v", cp.BuildingSummaryView)
 	}
 	if len(cp.Charges) != 1 || cp.Charges[0].Name != "Power" || cp.Charges[0].ID == src.Charges[0].ID {
 		t.Errorf("charges %+v", cp.Charges)
@@ -428,15 +429,15 @@ func TestCopyBuilding(t *testing.T) {
 }
 
 func TestEnsureFirstBuildingOnlyOnce(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	ctx := context.Background()
-	first := FirstBuilding{Name: "Nhà trọ đầu tiên", WardCode: &e.ward, AddressDetail: "12 Le Loi"}
+	first := usecase.FirstBuilding{Name: "Nhà trọ đầu tiên", WardCode: &e.ward, AddressDetail: "12 Le Loi"}
 
-	created, err := e.svc.EnsureFirstBuilding(ctx, e.landlA, first)
+	created, err := e.buildings.EnsureFirstBuilding(ctx, e.landlA, first)
 	if err != nil || !created {
 		t.Fatalf("created %v err %v", created, err)
 	}
-	if created, err = e.svc.EnsureFirstBuilding(ctx, e.landlA, first); err != nil || created {
+	if created, err = e.buildings.EnsureFirstBuilding(ctx, e.landlA, first); err != nil || created {
 		t.Fatalf("a second call must do nothing: %v %v", created, err)
 	}
 	list := decodeData[[]BuildingSummary](t, e.call(http.MethodGet, "/v1/buildings", nil, "landlord-a"))
@@ -446,20 +447,20 @@ func TestEnsureFirstBuildingOnlyOnce(t *testing.T) {
 
 	// Deleting it does not earn a new one.
 	expectStatus(t, e.call(http.MethodDelete, "/v1/buildings/"+list[0].ID.String(), nil, "landlord-a"), http.StatusNoContent)
-	if created, err = e.svc.EnsureFirstBuilding(ctx, e.landlA, first); err != nil || created {
+	if created, err = e.buildings.EnsureFirstBuilding(ctx, e.landlA, first); err != nil || created {
 		t.Fatalf("after a delete: %v %v", created, err)
 	}
 	// Another landlord is unaffected.
-	if created, err = e.svc.EnsureFirstBuilding(ctx, e.landlB, first); err != nil || !created {
+	if created, err = e.buildings.EnsureFirstBuilding(ctx, e.landlB, first); err != nil || !created {
 		t.Fatalf("landlord b: %v %v", created, err)
 	}
 }
 
 func TestSeedDemoIsIdempotent(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		if err := SeedDemo(ctx, e.svc, e.landlA); err != nil {
+		if err := e.seeder.SeedDemo(ctx, e.landlA); err != nil {
 			t.Fatalf("seed %d: %v", i+1, err)
 		}
 	}
@@ -478,12 +479,12 @@ func TestSeedDemoIsIdempotent(t *testing.T) {
 	p101, p106, a1 := e.getRoom("landlord-a", rooms.Data[0].ID), e.getRoom("landlord-a", rooms.Data[5].ID), e.getRoom("landlord-a", rooms.Data[6].ID)
 	if p101.PriceVND != 2_500_000 || len(p101.Inherits) != 6 || len(p101.Charges) != 3 || p106.PriceVND != 3_000_000 || slices.Contains(p106.Inherits, "price") ||
 		a1.Building != nil || a1.Status != "maintenance" || a1.PriceVND != 1_800_000 || a1.AddressDetail != "45 Trần Phú" {
-		t.Errorf("rooms %+v %+v %+v", p101.RoomSummary, p106.RoomSummary, a1.RoomSummary)
+		t.Errorf("rooms %+v %+v %+v", p101.RoomSummaryView, p106.RoomSummaryView, a1.RoomSummaryView)
 	}
 }
 
 func TestMalformedBodies(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	w := e.call(http.MethodPost, "/v1/buildings", "not an object", "landlord-a")
 	expectError(t, w, http.StatusBadRequest, apperr.CodeRequestMalformed)
 	// Money is whole dong.
@@ -493,7 +494,7 @@ func TestMalformedBodies(t *testing.T) {
 
 // followers creates the rooms of a propagation test: one follows everything, one has its own rent and charges, one
 // stands in the same building with its own values for everything.
-func (e *env) followers(b BuildingDetail) (all, own RoomDetail) {
+func (e *propertyEnv) followers(b BuildingDetail) (all, own RoomDetail) {
 	all = e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "All"})
 	own = e.roomAPI("landlord-a", map[string]any{
 		"building_id": b.ID, "name": "Own", "price_vnd": 4_000_000, "area_square_meters": 11,
@@ -504,9 +505,9 @@ func (e *env) followers(b BuildingDetail) (all, own RoomDetail) {
 }
 
 func TestBuildingEditReachesOnlyTheRoomsThatFollow(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	rec := &recorder{}
-	e.svc.observer = rec
+	e.observer.set(rec)
 	b := e.fullBuilding("landlord-a", "Nha A")
 	all, own := e.followers(b)
 	put := func(body map[string]any) BuildingDetail {
@@ -544,7 +545,7 @@ func TestBuildingEditReachesOnlyTheRoomsThatFollow(t *testing.T) {
 		"address_detail": "99 Tran Phu", "ward_code": nil})
 	for _, id := range []uuid.UUID{all.ID, own.ID} {
 		if r := e.getRoom("landlord-a", id); r.AddressDetail != "99 Tran Phu" || r.Ward != nil {
-			t.Errorf("address of %s: %+v", r.Name, r.RoomSummary)
+			t.Errorf("address of %s: %+v", r.Name, r.RoomSummaryView)
 		}
 	}
 
@@ -560,9 +561,9 @@ func TestBuildingEditReachesOnlyTheRoomsThatFollow(t *testing.T) {
 }
 
 func TestBuildingChargesReachTheFollowingRooms(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	rec := &recorder{}
-	e.svc.observer = rec
+	e.observer.set(rec)
 	b := e.fullBuilding("landlord-a", "Nha A")
 	all, own := e.followers(b)
 	power, water := b.Charges[0], b.Charges[1]
@@ -619,7 +620,7 @@ func TestBuildingChargesReachTheFollowingRooms(t *testing.T) {
 }
 
 func TestCreateRoomsInBuildingRun(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.fullBuilding("landlord-a", "Nha A")
 	post := func(bearer string, id uuid.UUID, body map[string]any) *httptest.ResponseRecorder {
 		return e.call(http.MethodPost, "/v1/buildings/"+id.String()+"/rooms", body, bearer)
@@ -651,7 +652,7 @@ func TestCreateRoomsInBuildingRun(t *testing.T) {
 	q8 := e.getRoom("landlord-a", decodeData[RunResult](t, w).IDs[0])
 	if q8.Name != "Q008" || q8.Status != "maintenance" || q8.PriceVND != 1_000_000 || slices.Contains(q8.Inherits, "price") || slices.Contains(q8.Inherits, "charges") ||
 		len(q8.Charges) != 1 || q8.Charges[0].FollowsBuilding {
-		t.Errorf("own values %+v charges %+v", q8.RoomSummary, q8.Charges)
+		t.Errorf("own values %+v charges %+v", q8.RoomSummaryView, q8.Charges)
 	}
 
 	// One taken name creates none of the run.
@@ -689,7 +690,7 @@ func TestCreateRoomsInBuildingRun(t *testing.T) {
 
 func TestCreateRoomsInBuildingHonoursThePlan(t *testing.T) {
 	limit := 3
-	e := newEnv(t, fakePlans{rooms: &limit})
+	e := newPropertyEnv(t, fakePlans{rooms: &limit})
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	expectError(t, e.call(http.MethodPost, "/v1/buildings/"+b.ID.String()+"/rooms", map[string]any{"from": 1, "to": 4}, "landlord-a"), http.StatusConflict, apperr.CodeRoomLimit)
 	expectStatus(t, e.call(http.MethodPost, "/v1/buildings/"+b.ID.String()+"/rooms", map[string]any{"from": 1, "to": 3}, "landlord-a"), http.StatusCreated)
@@ -700,7 +701,7 @@ func TestCreateRoomsInBuildingHonoursThePlan(t *testing.T) {
 }
 
 func TestCopyBuildingWithRooms(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	src := e.fullBuilding("landlord-a", "Source")
 	all, own := e.followers(src)
 	maintenance := e.roomAPI("landlord-a", map[string]any{"building_id": src.ID, "name": "Fix", "status": "maintenance"})
@@ -713,7 +714,7 @@ func TestCopyBuildingWithRooms(t *testing.T) {
 	result := decodeData[CopyResult](t, w)
 	cp := result.Building
 	if result.RoomsCopied != 4 || cp.RoomsCount != 4 || cp.AvailableRooms != 3 {
-		t.Fatalf("copied %d: %+v", result.RoomsCopied, cp.BuildingSummary)
+		t.Fatalf("copied %d: %+v", result.RoomsCopied, cp.BuildingSummaryView)
 	}
 	rooms := e.listRooms("landlord-a", "?building_id="+cp.ID.String())
 	byName := map[string]RoomSummary{}
@@ -733,14 +734,14 @@ func TestCopyBuildingWithRooms(t *testing.T) {
 	// A follower follows the new building's charges (copies of its templates); a room with its own keeps its values and charges.
 	newAll := e.getRoom("landlord-a", byName["All"].ID)
 	if len(newAll.Charges) != 2 || !newAll.Charges[0].FollowsBuilding || newAll.Charges[0].ID == all.Charges[0].ID || len(newAll.Inherits) != 6 {
-		t.Errorf("follower %+v charges %+v", newAll.RoomSummary, newAll.Charges)
+		t.Errorf("follower %+v charges %+v", newAll.RoomSummaryView, newAll.Charges)
 	}
 	if newAll.Charges[0].Name != cp.Charges[0].Name {
 		t.Errorf("charges come from the new building: %+v", newAll.Charges)
 	}
 	newOwn := e.getRoom("landlord-a", byName["Own"].ID)
 	if newOwn.ID == own.ID || newOwn.PriceVND != 4_000_000 || *newOwn.Description != "Mine" || len(newOwn.Charges) != 1 || newOwn.Charges[0].Name != "Mine" || newOwn.Charges[0].FollowsBuilding || newOwn.Charges[0].ID == own.Charges[0].ID {
-		t.Errorf("own room %+v charges %+v", newOwn.RoomSummary, newOwn.Charges)
+		t.Errorf("own room %+v charges %+v", newOwn.RoomSummaryView, newOwn.Charges)
 	}
 	if newOwn.DisplayOrder <= rented.DisplayOrder {
 		t.Errorf("copies take later positions: %d", newOwn.DisplayOrder)

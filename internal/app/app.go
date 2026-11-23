@@ -18,14 +18,16 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"rental-management/config"
+	"rental-management/internal/adapter/filestore"
 	httpadapter "rental-management/internal/adapter/http"
+	"rental-management/internal/adapter/imageproc"
 	mailadapter "rental-management/internal/adapter/mail"
 	"rental-management/internal/adapter/persistence/postgres"
 	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/adapter/security"
-	"rental-management/internal/modules/property"
 	usecase "rental-management/internal/usecase/identity"
 	locationuc "rental-management/internal/usecase/location"
+	propertyuc "rental-management/internal/usecase/property"
 	"rental-management/pkg/db"
 	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
@@ -103,7 +105,14 @@ func RunAPI(ctx context.Context) error {
 				func(v1 *gin.RouterGroup) {
 					httpadapter.MountAuth(v1, httpadapter.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
 				},
-				property.Mount(properties, property.RouteOptions{Auth: authenticator, Limiter: limiter}),
+				func(v1 *gin.RouterGroup) {
+					binder := httpx.NewBinder()
+					httpadapter.MountProperty(v1,
+						httpadapter.NewBuildingHandler(properties.buildings, files, binder),
+						httpadapter.NewRoomHandler(properties.rooms, files, binder),
+						httpadapter.NewMediaHandler(properties.media, files, binder, cfg.MediaMaxUploadBytes),
+						authenticator, limiter)
+				},
 			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -172,20 +181,38 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 	})
 }
 
-// newProperty builds the buildings and rooms service. The plan, guard and observer ports keep their defaults
-// (nothing limited, nothing blocking, nobody listening) until the modules that own them are wired here.
-func newProperty(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage) *property.Service {
-	return property.NewService(property.Deps{
-		Store:   property.NewStore(pool),
-		Storage: files,
-		Images: imaging.NewProcessor(imaging.Limits{
+// property is the use cases of buildings, rooms and pictures, on their adapters.
+type property struct {
+	buildings *propertyuc.Buildings
+	rooms     *propertyuc.Rooms
+	media     *propertyuc.Media
+	seeder    *propertyuc.Seeder
+}
+
+// newProperty builds the property use cases on Postgres, the file store over files and the image processor. The
+// plan, guard and observer ports keep their defaults (nothing limited, nothing blocking, nobody listening) until
+// the contexts that own them are wired here.
+func newProperty(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage) property {
+	deps := propertyuc.Deps{
+		Tx:        postgres.NewTxManager(pool),
+		Buildings: postgres.NewBuildingRepository(pool),
+		Rooms:     postgres.NewRoomRepository(pool),
+		Charges:   postgres.NewChargeRepository(pool),
+		Media:     postgres.NewMediaRepository(pool),
+		Files:     filestore.New(files),
+		Images: imageproc.New(imaging.NewProcessor(imaging.Limits{
 			MaxBytes: cfg.MediaMaxUploadBytes, MaxDimension: cfg.MediaMaxDimension, ThumbMaxSize: cfg.MediaThumbnailMaxSize,
-		}, cfg.ImageProcessingConcurrency),
-		Log: log,
-		Now: time.Now,
-	}, property.Options{
+		}, cfg.ImageProcessingConcurrency)),
+		Clock: propertyuc.ClockFunc(time.Now),
+		Log:   log,
+	}
+	opts := propertyuc.Options{
 		MaxMediaPerOwner: cfg.MediaMaxPerOwner, MaxUploadBytes: cfg.MediaMaxUploadBytes, MaxDimension: cfg.MediaMaxDimension,
-	})
+	}
+	buildings, rooms := propertyuc.NewBuildings(deps, opts), propertyuc.NewRooms(deps, opts)
+	return property{
+		buildings: buildings, rooms: rooms, media: propertyuc.NewMedia(deps, opts), seeder: propertyuc.NewSeeder(buildings, rooms),
+	}
 }
 
 // openPool opens the Postgres pool with the configured limits; statementTimeoutMS overrides the per-query limit

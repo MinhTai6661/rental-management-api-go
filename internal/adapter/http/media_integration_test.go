@@ -1,6 +1,6 @@
 //go:build integration
 
-package property
+package httpadapter_test
 
 import (
 	"bytes"
@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
+	usecase "rental-management/internal/usecase/property"
 	"rental-management/pkg/apperr"
 )
 
@@ -132,7 +133,7 @@ func bombPNG() []byte {
 }
 
 // upload sends a multipart picture (kind "" sends no kind part).
-func (e *env) upload(method, path string, data []byte, kind, bearer string) *httptest.ResponseRecorder {
+func (e *propertyEnv) upload(method, path string, data []byte, kind, bearer string) *httptest.ResponseRecorder {
 	e.t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
@@ -156,7 +157,7 @@ func (e *env) upload(method, path string, data []byte, kind, bearer string) *htt
 	return w
 }
 
-func (e *env) addMedia(path string, data []byte, kind, bearer string) MediaView {
+func (e *propertyEnv) addMedia(path string, data []byte, kind, bearer string) MediaView {
 	e.t.Helper()
 	w := e.upload(http.MethodPost, path, data, kind, bearer)
 	expectStatus(e.t, w, http.StatusCreated)
@@ -166,7 +167,7 @@ func (e *env) addMedia(path string, data []byte, kind, bearer string) MediaView 
 // storedKey is the storage key behind a public URL of the test store.
 func storedKey(url string) string { return strings.TrimPrefix(url, "http://files.test/v1/media/") }
 
-func (e *env) storedBytes(url string) []byte {
+func (e *propertyEnv) storedBytes(url string) []byte {
 	e.t.Helper()
 	rc, _, err := e.files.Open(context.Background(), storedKey(url))
 	if err != nil {
@@ -178,15 +179,17 @@ func (e *env) storedBytes(url string) []byte {
 	return buf.Bytes()
 }
 
-func (e *env) roomMediaPath(id uuid.UUID) string { return "/v1/rooms/" + id.String() + "/media" }
-func (e *env) buildingMediaPath(id uuid.UUID) string {
+func (e *propertyEnv) roomMediaPath(id uuid.UUID) string {
+	return "/v1/rooms/" + id.String() + "/media"
+}
+func (e *propertyEnv) buildingMediaPath(id uuid.UUID) string {
 	return "/v1/buildings/" + id.String() + "/media"
 }
 
 // ---- tests ----
 
 func TestUploadWebPStripsMetadataAndMakesAThumbnail(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	m := e.addMedia(e.roomMediaPath(room.ID), webpWithEXIF(t), "", "landlord-a")
 	if m.ContentType != "image/webp" || m.Kind != "photo" || m.Width != 8 || m.Height != 8 || m.DisplayOrder != 1 {
@@ -209,7 +212,7 @@ func TestUploadWebPStripsMetadataAndMakesAThumbnail(t *testing.T) {
 }
 
 func TestUploadJPEGAndPNGAreStoredAsJPEGWithoutMetadata(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	m := e.addMedia(e.roomMediaPath(room.ID), jpegWithEXIF(t), "", "landlord-a")
 	if m.ContentType != "image/jpeg" || !strings.HasSuffix(storedKey(m.URL), ".jpg") {
@@ -228,7 +231,7 @@ func TestUploadJPEGAndPNGAreStoredAsJPEGWithoutMetadata(t *testing.T) {
 }
 
 func TestUploadRefusals(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	path := e.roomMediaPath(room.ID)
 	cases := []struct {
@@ -270,9 +273,8 @@ func TestUploadRefusals(t *testing.T) {
 }
 
 func TestMediaLimitAndPlanLimit(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil, withMaxMedia(2))
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
-	e.svc.opts.MaxMediaPerOwner = 2
 	e.addMedia(e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
 	e.addMedia(e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
 	w := e.upload(http.MethodPost, e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
@@ -285,20 +287,20 @@ func TestMediaLimitAndPlanLimit(t *testing.T) {
 	}
 	// The plan's limit wins over the configured default.
 	three := 3
-	e.svc.plans = mediaPlan{max: &three}
+	e.plans.set(mediaPlan{max: &three})
 	e.addMedia(e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
 	expectError(t, e.upload(http.MethodPost, e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a"), http.StatusConflict, apperr.CodeMediaLimitReached)
 }
 
 type mediaPlan struct {
-	UnlimitedPlans
+	usecase.UnlimitedPlans
 	max *int
 }
 
 func (p mediaPlan) MaxMediaPerOwner(context.Context, uuid.UUID) (*int, error) { return p.max, nil }
 
 func TestCoverKindArrangeReplaceDelete(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	path := e.roomMediaPath(room.ID)
 	a := e.addMedia(path, tinyWebP(t), "", "landlord-a")
@@ -382,7 +384,7 @@ func TestCoverKindArrangeReplaceDelete(t *testing.T) {
 }
 
 func TestMediaIsOwnerOnly(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	mine := e.addMedia(e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
@@ -418,9 +420,9 @@ func TestMediaIsOwnerOnly(t *testing.T) {
 }
 
 func TestRoomFollowingTheBuildingShowsItsPicturesAndLeavesOnItsOwnUpload(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	rec := &recorder{}
-	e.svc.observer = rec
+	e.observer.set(rec)
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1000})
 	follower := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P1"})
 	other := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "P2", "inherit": []string{"price"}})
@@ -465,7 +467,7 @@ func TestRoomFollowingTheBuildingShowsItsPicturesAndLeavesOnItsOwnUpload(t *test
 }
 
 func TestCopyBuildingDuplicatesPictures(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.fullBuilding("landlord-a", "B")
 	e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "F1"})
 	own := e.roomAPI("landlord-a", map[string]any{"building_id": b.ID, "name": "O1", "inherit": []string{"price"}})
@@ -517,7 +519,7 @@ func TestCopyBuildingDuplicatesPictures(t *testing.T) {
 }
 
 func TestCopyBuildingFailureLeavesNoFiles(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	e.addMedia(e.buildingMediaPath(b.ID), tinyWebP(t), "", "landlord-a")
 	before := e.files.Keys()
@@ -535,7 +537,7 @@ func TestCopyBuildingFailureLeavesNoFiles(t *testing.T) {
 }
 
 func TestDeletingABuildingRemovesItsPictureFiles(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	b := e.building("landlord-a", "B", map[string]any{"price_vnd": 1})
 	e.addMedia(e.buildingMediaPath(b.ID), tinyWebP(t), "", "landlord-a")
 	if len(e.files.Keys()) != 2 {
@@ -548,9 +550,9 @@ func TestDeletingABuildingRemovesItsPictureFiles(t *testing.T) {
 }
 
 func TestMediaFailureAfterStorageLeavesNoFiles(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
-	e.svc.plans = failingPlan{}
+	e.plans.set(failingPlan{})
 	w := e.upload(http.MethodPost, e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
 	expectStatus(t, w, http.StatusInternalServerError)
 	if keys := e.files.Keys(); len(keys) != 0 {
@@ -558,14 +560,14 @@ func TestMediaFailureAfterStorageLeavesNoFiles(t *testing.T) {
 	}
 }
 
-type failingPlan struct{ UnlimitedPlans }
+type failingPlan struct{ usecase.UnlimitedPlans }
 
 func (failingPlan) MaxMediaPerOwner(context.Context, uuid.UUID) (*int, error) {
 	return nil, errors.New("plan lookup failed")
 }
 
 func TestServeMedia(t *testing.T) {
-	e := newEnv(t, nil)
+	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	m := e.addMedia(e.roomMediaPath(room.ID), tinyWebP(t), "", "landlord-a")
 	key := storedKey(m.URL)
