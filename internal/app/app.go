@@ -18,10 +18,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"rental-management/config"
-	"rental-management/internal/modules/identity"
+	"rental-management/internal/handler"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
+	"rental-management/internal/repository"
+	"rental-management/internal/router"
+	"rental-management/internal/service"
 	"rental-management/pkg/db"
+	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/logger"
@@ -91,7 +95,9 @@ func RunAPI(ctx context.Context) error {
 				location.Mount(location.NewStore(pool), location.Options{
 					Limiter: limiter, Limit: location.DefaultLimit, Window: location.DefaultWindow,
 				}),
-				identity.Mount(auth, identity.RouteOptions{Limiter: limiter}),
+				func(v1 *gin.RouterGroup) {
+					router.MountAuth(v1, handler.NewAuthHandler(auth, httpx.NewBinder(), limiter), auth, limiter)
+				},
 				property.Mount(properties, property.RouteOptions{Auth: auth, Limiter: limiter}),
 			},
 		}),
@@ -124,7 +130,7 @@ func RunAPI(ctx context.Context) error {
 
 // newIdentity builds the account service: tokens, revocations in Redis, and the mailer (SMTP, or the log when no
 // SMTP server is set, which RequireAPI only allows outside production).
-func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client) (*identity.Service, error) {
+func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client) (*service.AuthService, error) {
 	renderer, err := mail.NewRenderer()
 	if err != nil {
 		return nil, err
@@ -136,15 +142,19 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 			Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
 		}
 	}
-	return identity.NewService(identity.Deps{
-		Store:       identity.NewStore(pool),
-		Tokens:      identity.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
-		Revocations: identity.NewRevocations(rdb, cfg.RedisKeyPrefix),
-		Mailer:      mailer,
-		Renderer:    renderer,
-		Log:         log,
-		Now:         time.Now,
-	}, identity.Options{
+	return service.NewAuthService(service.AuthDeps{
+		Tx:            repository.NewTxManager(pool),
+		Users:         repository.NewUserRepository(pool),
+		Sessions:      repository.NewSessionRepository(pool),
+		Verifications: repository.NewVerificationRepository(pool),
+		Permissions:   repository.NewPermissionRepository(pool),
+		Revocations:   repository.NewRevocationRepository(rdb, cfg.RedisKeyPrefix),
+		Tokens:        service.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
+		Mailer:        mailer,
+		Renderer:      renderer,
+		Log:           log,
+		Now:           time.Now,
+	}, service.AuthOptions{
 		TermsVersion:       cfg.TermsVersion,
 		WebURL:             cfg.WebURL,
 		RefreshTTL:         cfg.RefreshTokenTTL,

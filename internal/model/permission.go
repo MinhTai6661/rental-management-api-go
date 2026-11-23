@@ -1,6 +1,7 @@
-// Package identity owns accounts, roles, permissions and login sessions. This file is the catalog: the roles,
-// the permissions and which role has which. `rental-management seed` makes the database match it.
-package identity
+// The permission catalog: the roles, the permissions and which role has which. `rental-management seed` makes the
+// database match it.
+
+package model
 
 import (
 	"fmt"
@@ -8,6 +9,13 @@ import (
 
 	"rental-management/pkg/authz"
 )
+
+// Role is a row of the roles table: its code, how senior it is and whether it belongs to the platform's staff.
+type Role struct {
+	Code      string
+	Seniority int
+	IsStaff   bool
+}
 
 // Permission is one thing a role may be allowed to do. Codes are "<resource>.<action>"; "<resource>.manage"
 // allows every action on the resource (see authz.HasPermission).

@@ -1,4 +1,4 @@
-package identity
+package service
 
 import (
 	"context"
@@ -7,25 +7,24 @@ import (
 	"log/slog"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	"rental-management/internal/model"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/authz"
-	"rental-management/pkg/db"
 	"rental-management/pkg/mail"
 )
 
 // emailSendTimeout bounds one delivery to the SMTP server; sending happens after the request is answered.
 const emailSendTimeout = 15 * time.Second
 
-// Options are the settings of the service.
-type Options struct {
+// AuthOptions are the settings of the auth service.
+type AuthOptions struct {
 	// TermsVersion is the version of the terms of use people must accept.
 	TermsVersion string
 	// WebURL is the origin of the web app; the link of the verification email points there.
@@ -43,14 +42,18 @@ type Options struct {
 	PermissionCacheTTL time.Duration
 }
 
-// Deps are the collaborators of the service.
-type Deps struct {
-	Store       *Store
-	Tokens      *TokenIssuer
-	Revocations *Revocations
-	Mailer      mail.Mailer
-	Renderer    *mail.Renderer
-	Log         *slog.Logger
+// AuthDeps are the collaborators of the auth service.
+type AuthDeps struct {
+	Tx            TxManager
+	Users         UserRepository
+	Sessions      SessionRepository
+	Verifications VerificationRepository
+	Permissions   PermissionRepository
+	Revocations   RevocationRepository
+	Tokens        *TokenIssuer
+	Mailer        mail.Mailer
+	Renderer      *mail.Renderer
+	Log           *slog.Logger
 	// Now is the clock; time.Now in production.
 	Now func() time.Time
 	// Dispatch runs background work (sending an email) so the response does not wait for it, and so the time a
@@ -58,33 +61,37 @@ type Deps struct {
 	Dispatch func(work func())
 }
 
-// Service is the use cases of accounts and login sessions.
-type Service struct {
-	store       *Store
-	tokens      *TokenIssuer
-	revocations *Revocations
-	mailer      mail.Mailer
-	renderer    *mail.Renderer
-	log         *slog.Logger
-	now         func() time.Time
-	dispatch    func(work func())
-	perms       *permissionCache
-	opts        Options
+// AuthService is the use cases of accounts and login sessions.
+type AuthService struct {
+	tx            TxManager
+	users         UserRepository
+	sessions      SessionRepository
+	verifications VerificationRepository
+	tokens        *TokenIssuer
+	revocations   RevocationRepository
+	mailer        mail.Mailer
+	renderer      *mail.Renderer
+	log           *slog.Logger
+	now           func() time.Time
+	dispatch      func(work func())
+	perms         *permissionCache
+	opts          AuthOptions
 	// dummyHash is verified when an email has no account, so a wrong email costs as much time as a wrong password.
 	dummyHash  string
 	background sync.WaitGroup
 }
 
-// NewService builds the service.
-func NewService(d Deps, o Options) (*Service, error) {
+// NewAuthService builds the service.
+func NewAuthService(d AuthDeps, o AuthOptions) (*AuthService, error) {
 	dummy, err := HashPassword("not-a-real-password")
 	if err != nil {
 		return nil, err
 	}
-	s := &Service{
-		store: d.Store, tokens: d.Tokens, revocations: d.Revocations, mailer: d.Mailer, renderer: d.Renderer,
-		log: d.Log, now: d.Now, dispatch: d.Dispatch, opts: o, dummyHash: dummy,
-		perms: newPermissionCache(d.Store.q, o.PermissionCacheTTL, d.Now),
+	s := &AuthService{
+		tx: d.Tx, users: d.Users, sessions: d.Sessions, verifications: d.Verifications, tokens: d.Tokens,
+		revocations: d.Revocations, mailer: d.Mailer, renderer: d.Renderer, log: d.Log, now: d.Now,
+		dispatch: d.Dispatch, opts: o, dummyHash: dummy,
+		perms: newPermissionCache(d.Permissions, o.PermissionCacheTTL, d.Now),
 	}
 	if s.dispatch == nil {
 		s.dispatch = s.runInBackground
@@ -93,7 +100,7 @@ func NewService(d Deps, o Options) (*Service, error) {
 }
 
 // runInBackground runs work in a goroutine that Wait can wait for.
-func (s *Service) runInBackground(work func()) {
+func (s *AuthService) runInBackground(work func()) {
 	s.background.Add(1)
 	go func() {
 		defer s.background.Done()
@@ -102,10 +109,10 @@ func (s *Service) runInBackground(work func()) {
 }
 
 // Wait blocks until the background work (emails being sent) is done; call it when the server shuts down.
-func (s *Service) Wait() { s.background.Wait() }
+func (s *AuthService) Wait() { s.background.Wait() }
 
-// Client is where a request came from; it is kept with the login session.
-type Client struct {
+// AuthClient is where a request came from; it is kept with the login session.
+type AuthClient struct {
 	IP        string
 	UserAgent string
 }
@@ -113,7 +120,7 @@ type Client struct {
 // maxUserAgentBytes caps the user agent stored with a session.
 const maxUserAgentBytes = 255
 
-func (c Client) ipAddr() *netip.Addr {
+func (c AuthClient) ipAddr() *netip.Addr {
 	addr, err := netip.ParseAddr(c.IP)
 	if err != nil {
 		return nil
@@ -121,7 +128,7 @@ func (c Client) ipAddr() *netip.Addr {
 	return &addr
 }
 
-func (c Client) userAgent() *string {
+func (c AuthClient) userAgent() *string {
 	if c.UserAgent == "" {
 		return nil
 	}
@@ -130,21 +137,6 @@ func (c Client) userAgent() *string {
 		ua = ua[:maxUserAgentBytes]
 	}
 	return &ua
-}
-
-// Tokens are the credentials a client gets after logging in or refreshing.
-type Tokens struct {
-	TokenType        string `json:"token_type"`
-	AccessToken      string `json:"access_token"`
-	ExpiresIn        int    `json:"expires_in"`
-	RefreshToken     string `json:"refresh_token"`
-	RefreshExpiresIn int    `json:"refresh_expires_in"`
-}
-
-// LoginResult is the answer of a login or a role switch.
-type LoginResult struct {
-	User   UserView `json:"user"`
-	Tokens Tokens   `json:"tokens"`
 }
 
 // RegisterInput is what a person gives to create an account.
@@ -161,43 +153,43 @@ type RegisterInput struct {
 
 // Register creates a tenant account that cannot log in until its email is verified, and sends the verification
 // email. Staff and landlord roles are never granted here.
-func (s *Service) Register(ctx context.Context, in RegisterInput) (UserView, error) {
-	email := normalizeEmail(in.Email)
+func (s *AuthService) Register(ctx context.Context, in RegisterInput) (model.UserView, error) {
+	email := NormalizeEmail(in.Email)
 	hash, err := HashPassword(in.Password)
 	if err != nil {
-		return UserView{}, err
+		return model.UserView{}, err
 	}
 	verifyToken, verifyHash, err := NewOpaqueToken()
 	if err != nil {
-		return UserView{}, err
+		return model.UserView{}, err
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return UserView{}, fmt.Errorf("make user id: %w", err)
+		return model.UserView{}, fmt.Errorf("make user id: %w", err)
 	}
 	now := s.now()
 	role := authz.RoleTenant
 
-	err = s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
-		if _, err := q.CreateUser(ctx, sqlcgen.CreateUserParams{
-			ID: id, Email: &email, PasswordHash: &hash, FullName: in.FullName, PhoneNumber: in.PhoneNumber,
-			WardCode: in.WardCode, AddressDetail: in.AddressDetail, LastActiveRole: &role,
-			TermsVersion: &s.opts.TermsVersion, TermsAcceptedAt: &now, Now: now,
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.users.Create(ctx, model.NewUser{
+			ID: id, Email: email, PasswordHash: hash, FullName: in.FullName, PhoneNumber: in.PhoneNumber,
+			WardCode: in.WardCode, AddressDetail: in.AddressDetail, LastActiveRole: role,
+			TermsVersion: s.opts.TermsVersion, TermsAcceptedAt: now, CreatedAt: now,
 		}); err != nil {
 			return err
 		}
-		if err := assignRoles(ctx, q, id, []string{role}, now); err != nil {
+		if err := assignRoles(ctx, s.users, id, []string{role}, now); err != nil {
 			return err
 		}
-		return s.insertVerificationToken(ctx, q, id, verifyHash, now)
+		return s.insertVerificationToken(ctx, id, verifyHash, now)
 	})
 	switch {
-	case db.IsUniqueViolation(err):
-		return UserView{}, apperr.Invalid(apperr.Field{Name: "email", Rule: apperr.RuleUnique})
-	case db.IsForeignKeyViolation(err):
-		return UserView{}, apperr.Invalid(apperr.Field{Name: "ward_code", Rule: apperr.RuleExists})
+	case model.IsUnique(err):
+		return model.UserView{}, apperr.Invalid(apperr.Field{Name: "email", Rule: apperr.RuleUnique})
+	case model.IsForeignKey(err):
+		return model.UserView{}, apperr.Invalid(apperr.Field{Name: "ward_code", Rule: apperr.RuleExists})
 	case err != nil:
-		return UserView{}, err
+		return model.UserView{}, err
 	}
 
 	s.sendVerification(ctx, in.FullName, email, verifyToken, in.Lang)
@@ -206,12 +198,12 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (UserView, err
 
 // Login checks the credentials and opens a session. A wrong email and a wrong password look the same, and cost the
 // same time. Only after the password is right does the caller learn that the account is disabled or unverified.
-func (s *Service) Login(ctx context.Context, email, password string, client Client) (LoginResult, error) {
-	user, err := s.store.q.GetUserByEmail(ctx, normalizeEmail(email))
+func (s *AuthService) Login(ctx context.Context, email, password string, client AuthClient) (model.LoginResult, error) {
+	user, err := s.users.FindByEmail(ctx, NormalizeEmail(email))
 	hash := s.dummyHash
 	found := err == nil
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return LoginResult{}, err
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return model.LoginResult{}, err
 	}
 	if found && user.PasswordHash != nil {
 		hash = *user.PasswordHash
@@ -221,59 +213,59 @@ func (s *Service) Login(ctx context.Context, email, password string, client Clie
 		s.log.Error("stored password hash is unusable", "user_id", user.ID, "error", verr)
 	}
 	if !found || user.PasswordHash == nil || !matches {
-		return LoginResult{}, apperr.InvalidCredentials()
+		return model.LoginResult{}, apperr.InvalidCredentials()
 	}
 	if user.Status != authz.StatusActive {
-		return LoginResult{}, apperr.AccountInactive()
+		return model.LoginResult{}, apperr.AccountInactive()
 	}
 	if user.EmailVerifiedAt == nil {
-		return LoginResult{}, apperr.EmailUnverified()
+		return model.LoginResult{}, apperr.EmailUnverified()
 	}
 
-	auth, err := s.store.q.GetAuthUser(ctx, user.ID)
+	auth, err := s.users.AuthUser(ctx, user.ID)
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 	role := initialRole(auth.Roles, deref(auth.LastActiveRole))
 	if role == "" {
-		return LoginResult{}, apperr.Forbidden()
+		return model.LoginResult{}, apperr.Forbidden()
 	}
 	return s.openSession(ctx, user.ID, role, client)
 }
 
 // openSession records a new login session acting in role and returns its credentials and the user.
-func (s *Service) openSession(ctx context.Context, userID uuid.UUID, role string, client Client) (LoginResult, error) {
+func (s *AuthService) openSession(ctx context.Context, userID uuid.UUID, role string, client AuthClient) (model.LoginResult, error) {
 	now := s.now()
 	sessionID, err := uuid.NewV7()
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("make session id: %w", err)
+		return model.LoginResult{}, fmt.Errorf("make session id: %w", err)
 	}
 	var refresh string
-	err = s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
-		if err := q.SetLastActiveRole(ctx, sqlcgen.SetLastActiveRoleParams{ID: userID, Role: &role, Now: now}); err != nil {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.users.SetLastActiveRole(ctx, userID, role, now); err != nil {
 			return err
 		}
-		refresh, err = s.createSession(ctx, q, userID, sessionID, role, client, now)
+		refresh, err = s.createSession(ctx, userID, sessionID, role, client, now)
 		return err
 	})
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 	return s.credentials(ctx, userID, sessionID, role, refresh)
 }
 
 // createSession inserts the session row and its first refresh token and returns the raw token.
-func (s *Service) createSession(ctx context.Context, q *sqlcgen.Queries, userID, sessionID uuid.UUID, role string, client Client, now time.Time) (string, error) {
-	if err := q.CreateSession(ctx, sqlcgen.CreateSessionParams{
-		ID: sessionID, UserID: userID, ActiveRole: role, UserAgent: client.userAgent(), IpAddress: client.ipAddr(), Now: now,
-	}); err != nil {
+func (s *AuthService) createSession(ctx context.Context, userID, sessionID uuid.UUID, role string, client AuthClient, now time.Time) (string, error) {
+	if err := s.sessions.Create(ctx, model.NewSession{
+		ID: sessionID, UserID: userID, Role: role, UserAgent: client.userAgent(), IP: client.ipAddr(),
+	}, now); err != nil {
 		return "", err
 	}
-	return s.insertRefreshToken(ctx, q, sessionID, nil, now)
+	return s.insertRefreshToken(ctx, sessionID, nil, now)
 }
 
 // insertRefreshToken stores a new refresh token of the session (its hash only) and returns the raw token.
-func (s *Service) insertRefreshToken(ctx context.Context, q *sqlcgen.Queries, sessionID uuid.UUID, parent *uuid.UUID, now time.Time) (string, error) {
+func (s *AuthService) insertRefreshToken(ctx context.Context, sessionID uuid.UUID, parent *uuid.UUID, now time.Time) (string, error) {
 	raw, hash, err := NewOpaqueToken()
 	if err != nil {
 		return "", err
@@ -282,31 +274,31 @@ func (s *Service) insertRefreshToken(ctx context.Context, q *sqlcgen.Queries, se
 	if err != nil {
 		return "", fmt.Errorf("make refresh token id: %w", err)
 	}
-	err = q.InsertRefreshToken(ctx, sqlcgen.InsertRefreshTokenParams{
-		ID: id, SessionID: sessionID, TokenHash: hash, ParentID: parent, ExpiresAt: now.Add(s.opts.RefreshTTL), Now: now,
-	})
+	err = s.sessions.InsertRefreshToken(ctx, model.NewRefreshToken{
+		ID: id, SessionID: sessionID, Hash: hash, ParentID: parent, ExpiresAt: now.Add(s.opts.RefreshTTL),
+	}, now)
 	return raw, err
 }
 
 // credentials signs the access token and describes the user, for the answer of a login or a role switch.
-func (s *Service) credentials(ctx context.Context, userID, sessionID uuid.UUID, role, refresh string) (LoginResult, error) {
+func (s *AuthService) credentials(ctx context.Context, userID, sessionID uuid.UUID, role, refresh string) (model.LoginResult, error) {
 	tokens, err := s.tokensFor(userID, sessionID, role, refresh)
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 	user, err := s.userView(ctx, userID, role)
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
-	return LoginResult{User: user, Tokens: tokens}, nil
+	return model.LoginResult{User: user, Tokens: tokens}, nil
 }
 
-func (s *Service) tokensFor(userID, sessionID uuid.UUID, role, refresh string) (Tokens, error) {
+func (s *AuthService) tokensFor(userID, sessionID uuid.UUID, role, refresh string) (model.Tokens, error) {
 	access, _, err := s.tokens.Sign(userID, sessionID, role)
 	if err != nil {
-		return Tokens{}, err
+		return model.Tokens{}, err
 	}
-	return Tokens{
+	return model.Tokens{
 		TokenType: "Bearer", AccessToken: access, ExpiresIn: int(s.tokens.TTL().Seconds()),
 		RefreshToken: refresh, RefreshExpiresIn: int(s.opts.RefreshTTL.Seconds()),
 	}, nil
@@ -314,16 +306,16 @@ func (s *Service) tokensFor(userID, sessionID uuid.UUID, role, refresh string) (
 
 // Refresh exchanges a refresh token for a new pair. Each refresh token works once: using an old one again after
 // the grace window means a copy was kept somewhere, and the whole session is closed.
-func (s *Service) Refresh(ctx context.Context, raw string, client Client) (Tokens, error) {
+func (s *AuthService) Refresh(ctx context.Context, raw string, client AuthClient) (model.Tokens, error) {
 	var (
-		out       Tokens
+		out       model.Tokens
 		fail      error
 		closedSID []string
 	)
-	err := s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
-		rt, err := q.GetRefreshTokenForUpdate(ctx, HashToken(raw))
-		if errors.Is(err, pgx.ErrNoRows) {
+		rt, err := s.sessions.RefreshTokenForUpdate(ctx, HashToken(raw))
+		if errors.Is(err, model.ErrNotFound) {
 			fail = apperr.RefreshInvalid()
 			return nil
 		}
@@ -334,7 +326,7 @@ func (s *Service) Refresh(ctx context.Context, raw string, client Client) (Token
 		// closeSession ends the session and answers "invalid". It returns nil so the transaction COMMITS: rolling
 		// back here would undo the very revocation that protects the account.
 		closeSession := func(reason string) error {
-			if err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{ID: rt.SessionID, Now: now, Reason: &reason}); err != nil {
+			if err := s.sessions.Revoke(ctx, rt.SessionID, now, reason); err != nil {
 				return err
 			}
 			closedSID = append(closedSID, rt.SessionID.String())
@@ -351,7 +343,7 @@ func (s *Service) Refresh(ctx context.Context, raw string, client Client) (Token
 			return closeSession("reuse_detected")
 		}
 
-		user, err := q.GetAuthUser(ctx, rt.UserID)
+		user, err := s.users.AuthUser(ctx, rt.UserID)
 		if err != nil {
 			return err
 		}
@@ -364,24 +356,24 @@ func (s *Service) Refresh(ctx context.Context, raw string, client Client) (Token
 		}
 
 		if rt.RotatedAt == nil {
-			if err := q.MarkRefreshTokenRotated(ctx, sqlcgen.MarkRefreshTokenRotatedParams{ID: rt.ID, Now: now}); err != nil {
+			if err := s.sessions.MarkRefreshTokenRotated(ctx, rt.ID, now); err != nil {
 				return err
 			}
 		}
-		refresh, err := s.insertRefreshToken(ctx, q, rt.SessionID, &rt.ID, now)
+		refresh, err := s.insertRefreshToken(ctx, rt.SessionID, &rt.ID, now)
 		if err != nil {
 			return err
 		}
-		if err := q.TouchSession(ctx, sqlcgen.TouchSessionParams{
-			ID: rt.SessionID, Now: now, ActiveRole: role, UserAgent: client.userAgent(), IpAddress: client.ipAddr(),
-		}); err != nil {
+		if err := s.sessions.Touch(ctx, model.SessionTouch{
+			ID: rt.SessionID, Role: role, UserAgent: client.userAgent(), IP: client.ipAddr(),
+		}, now); err != nil {
 			return err
 		}
 		out, err = s.tokensFor(rt.UserID, rt.SessionID, role, refresh)
 		return err
 	})
 	if err != nil {
-		return Tokens{}, err
+		return model.Tokens{}, err
 	}
 	if len(closedSID) > 0 {
 		// The session is already closed in the database; this also stops the access tokens it still has.
@@ -390,39 +382,36 @@ func (s *Service) Refresh(ctx context.Context, raw string, client Client) (Token
 		}
 	}
 	if fail != nil {
-		return Tokens{}, fail
+		return model.Tokens{}, fail
 	}
 	return out, nil
 }
 
 // Logout ends the caller's session: its access token stops working at once and its refresh token with it. When the
 // caller names a refresh token of one of their own sessions, that session is the one closed.
-func (s *Service) Logout(ctx context.Context, p authz.Principal, refresh string) error {
+func (s *AuthService) Logout(ctx context.Context, p authz.Principal, refresh string) error {
 	target, err := uuid.Parse(p.SessionID)
 	if err != nil {
 		return apperr.Unauthenticated()
 	}
 	if refresh != "" {
-		if row, err := s.store.q.GetRefreshTokenSession(ctx, HashToken(refresh)); err == nil && row.UserID.String() == p.UserID {
+		if row, err := s.sessions.SessionOfRefreshToken(ctx, HashToken(refresh)); err == nil && row.UserID.String() == p.UserID {
 			target = row.SessionID
 		}
 	}
-	now := s.now()
-	reason := "logout"
-	if err := s.store.q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{ID: target, Now: now, Reason: &reason}); err != nil {
+	if err := s.sessions.Revoke(ctx, target, s.now(), "logout"); err != nil {
 		return err
 	}
 	return s.blockTokenAndSessions(ctx, p, []string{target.String()})
 }
 
 // LogoutAll ends every session of the caller, on every device.
-func (s *Service) LogoutAll(ctx context.Context, p authz.Principal) error {
+func (s *AuthService) LogoutAll(ctx context.Context, p authz.Principal) error {
 	userID, err := uuid.Parse(p.UserID)
 	if err != nil {
 		return apperr.Unauthenticated()
 	}
-	reason := "logout_all"
-	ids, err := s.store.q.RevokeUserSessions(ctx, sqlcgen.RevokeUserSessionsParams{UserID: userID, Now: s.now(), Reason: &reason})
+	ids, err := s.sessions.RevokeAllOfUser(ctx, userID, nil, s.now(), "logout_all")
 	if err != nil {
 		return err
 	}
@@ -430,7 +419,7 @@ func (s *Service) LogoutAll(ctx context.Context, p authz.Principal) error {
 }
 
 // blockTokenAndSessions stops the caller's current access token and the access tokens of the closed sessions.
-func (s *Service) blockTokenAndSessions(ctx context.Context, p authz.Principal, sessions []string) error {
+func (s *AuthService) blockTokenAndSessions(ctx context.Context, p authz.Principal, sessions []string) error {
 	if err := s.revocations.RevokeToken(ctx, p.TokenID, p.TokenExpiresAt.Sub(s.now())); err != nil {
 		return err
 	}
@@ -439,59 +428,58 @@ func (s *Service) blockTokenAndSessions(ctx context.Context, p authz.Principal, 
 
 // SwitchRole moves the caller to another role they hold. The old session is closed and a new one opens in the
 // new role, so tokens of the old role cannot be used any more. The refresh token proves the caller holds the session.
-func (s *Service) SwitchRole(ctx context.Context, p authz.Principal, role, refresh string, client Client) (LoginResult, error) {
+func (s *AuthService) SwitchRole(ctx context.Context, p authz.Principal, role, refresh string, client AuthClient) (model.LoginResult, error) {
 	userID, err := uuid.Parse(p.UserID)
 	if err != nil {
-		return LoginResult{}, apperr.Unauthenticated()
+		return model.LoginResult{}, apperr.Unauthenticated()
 	}
 	oldSession, err := uuid.Parse(p.SessionID)
 	if err != nil {
-		return LoginResult{}, apperr.Unauthenticated()
+		return model.LoginResult{}, apperr.Unauthenticated()
 	}
-	row, err := s.store.q.GetRefreshTokenSession(ctx, HashToken(refresh))
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (row.UserID != userID || row.SessionID != oldSession || row.RevokedAt != nil)) {
-		return LoginResult{}, apperr.RefreshInvalid()
+	row, err := s.sessions.SessionOfRefreshToken(ctx, HashToken(refresh))
+	if errors.Is(err, model.ErrNotFound) || (err == nil && (row.UserID != userID || row.SessionID != oldSession || row.RevokedAt != nil)) {
+		return model.LoginResult{}, apperr.RefreshInvalid()
 	}
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 
 	newSession, err := uuid.NewV7()
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("make session id: %w", err)
+		return model.LoginResult{}, fmt.Errorf("make session id: %w", err)
 	}
 	var newRefresh string
-	err = s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
-		held, err := q.GetAuthUser(ctx, userID)
+		held, err := s.users.AuthUser(ctx, userID)
 		if err != nil {
 			return err
 		}
-		if !contains(held.Roles, role) {
+		if !slices.Contains(held.Roles, role) {
 			return apperr.Invalid(apperr.Field{Name: "role", Rule: apperr.RuleRoleNotHeld})
 		}
-		reason := "role_switch"
-		if err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{ID: oldSession, Now: now, Reason: &reason}); err != nil {
+		if err := s.sessions.Revoke(ctx, oldSession, now, "role_switch"); err != nil {
 			return err
 		}
-		if err := q.SetLastActiveRole(ctx, sqlcgen.SetLastActiveRoleParams{ID: userID, Role: &role, Now: now}); err != nil {
+		if err := s.users.SetLastActiveRole(ctx, userID, role, now); err != nil {
 			return err
 		}
-		newRefresh, err = s.createSession(ctx, q, userID, newSession, role, client, now)
+		newRefresh, err = s.createSession(ctx, userID, newSession, role, client, now)
 		return err
 	})
 	if err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 	if err := s.blockTokenAndSessions(ctx, p, []string{oldSession.String()}); err != nil {
-		return LoginResult{}, err
+		return model.LoginResult{}, err
 	}
 	return s.credentials(ctx, userID, newSession, role, newRefresh)
 }
 
 // ChangePassword sets a new password and closes every other session of the account (the session that changed
 // it stays logged in).
-func (s *Service) ChangePassword(ctx context.Context, p authz.Principal, current, next string) error {
+func (s *AuthService) ChangePassword(ctx context.Context, p authz.Principal, current, next string) error {
 	userID, err := uuid.Parse(p.UserID)
 	if err != nil {
 		return apperr.Unauthenticated()
@@ -500,7 +488,7 @@ func (s *Service) ChangePassword(ctx context.Context, p authz.Principal, current
 	if err != nil {
 		return apperr.Unauthenticated()
 	}
-	stored, err := s.store.q.GetPasswordHash(ctx, userID)
+	stored, err := s.users.PasswordHash(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -525,15 +513,12 @@ func (s *Service) ChangePassword(ctx context.Context, p authz.Principal, current
 	}
 
 	var closed []uuid.UUID
-	err = s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
-		if err := q.UpdatePassword(ctx, sqlcgen.UpdatePasswordParams{ID: userID, PasswordHash: &newHash, Now: now}); err != nil {
+		if err := s.users.UpdatePassword(ctx, userID, newHash, now); err != nil {
 			return err
 		}
-		reason := "password_change"
-		closed, err = q.RevokeUserSessions(ctx, sqlcgen.RevokeUserSessionsParams{
-			UserID: userID, ExceptID: &keep, Now: now, Reason: &reason,
-		})
+		closed, err = s.sessions.RevokeAllOfUser(ctx, userID, &keep, now, "password_change")
 		return err
 	})
 	if err != nil {
@@ -543,10 +528,10 @@ func (s *Service) ChangePassword(ctx context.Context, p authz.Principal, current
 }
 
 // Me describes the caller, acting in the role of the current request.
-func (s *Service) Me(ctx context.Context, p authz.Principal) (UserView, error) {
+func (s *AuthService) Me(ctx context.Context, p authz.Principal) (model.UserView, error) {
 	userID, err := uuid.Parse(p.UserID)
 	if err != nil {
-		return UserView{}, apperr.Unauthenticated()
+		return model.UserView{}, apperr.Unauthenticated()
 	}
 	return s.userView(ctx, userID, p.Role)
 }
@@ -554,7 +539,7 @@ func (s *Service) Me(ctx context.Context, p authz.Principal) (UserView, error) {
 // Authenticate turns a bearer token into the caller: it checks the token, that it was not revoked, that the account
 // is still active, and works out the role and permissions of the request. A revocation check that cannot be made
 // (Redis down) is a 503, never a pass.
-func (s *Service) Authenticate(ctx context.Context, bearer string) (authz.Principal, error) {
+func (s *AuthService) Authenticate(ctx context.Context, bearer string) (authz.Principal, error) {
 	claims, err := s.tokens.Verify(bearer)
 	if err != nil {
 		return authz.Principal{}, apperr.Unauthenticated()
@@ -571,8 +556,8 @@ func (s *Service) Authenticate(ctx context.Context, bearer string) (authz.Princi
 		return authz.Principal{}, apperr.Unauthenticated()
 	}
 
-	user, err := s.store.q.GetAuthUser(ctx, userID)
-	if errors.Is(err, pgx.ErrNoRows) {
+	user, err := s.users.AuthUser(ctx, userID)
+	if errors.Is(err, model.ErrNotFound) {
 		return authz.Principal{}, apperr.Unauthenticated()
 	}
 	if err != nil {
@@ -597,12 +582,12 @@ func (s *Service) Authenticate(ctx context.Context, bearer string) (authz.Princi
 
 // VerifyEmail marks the address of the token as verified. A token works once and expires; one that is unknown,
 // used or expired gets the same answer.
-func (s *Service) VerifyEmail(ctx context.Context, raw string) error {
+func (s *AuthService) VerifyEmail(ctx context.Context, raw string) error {
 	verified := false
-	err := s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := s.now()
-		row, err := q.GetVerificationTokenForUpdate(ctx, HashToken(raw))
-		if errors.Is(err, pgx.ErrNoRows) {
+		row, err := s.verifications.ForUpdate(ctx, HashToken(raw))
+		if errors.Is(err, model.ErrNotFound) {
 			return nil
 		}
 		if err != nil {
@@ -611,15 +596,15 @@ func (s *Service) VerifyEmail(ctx context.Context, raw string) error {
 		if !verificationUsable(row.ExpiresAt, row.UsedAt, now) {
 			return nil
 		}
-		if err := q.MarkVerificationTokenUsed(ctx, sqlcgen.MarkVerificationTokenUsedParams{ID: row.ID, Now: now}); err != nil {
+		if err := s.verifications.MarkUsed(ctx, row.ID, now); err != nil {
 			return err
 		}
 		// Any other link sent to this account is now useless.
-		if err := q.InvalidateVerificationTokens(ctx, sqlcgen.InvalidateVerificationTokensParams{UserID: row.UserID, Now: now}); err != nil {
+		if err := s.verifications.InvalidateForUser(ctx, row.UserID, now); err != nil {
 			return err
 		}
 		verified = true
-		return q.MarkEmailVerified(ctx, sqlcgen.MarkEmailVerifiedParams{ID: row.UserID, Now: now})
+		return s.users.MarkEmailVerified(ctx, row.UserID, now)
 	})
 	if err != nil {
 		return err
@@ -633,10 +618,10 @@ func (s *Service) VerifyEmail(ctx context.Context, raw string) error {
 // ResendVerification sends a new verification link. It answers the same whether or not the address has an
 // account (nobody can use it to find out who is registered): an unknown, already verified or disabled address, or
 // one that got an email less than the cooldown ago, simply gets nothing. Older links stop working.
-func (s *Service) ResendVerification(ctx context.Context, email, lang string) error {
-	email = normalizeEmail(email)
-	user, err := s.store.q.GetUserByEmail(ctx, email)
-	if errors.Is(err, pgx.ErrNoRows) {
+func (s *AuthService) ResendVerification(ctx context.Context, email, lang string) error {
+	email = NormalizeEmail(email)
+	user, err := s.users.FindByEmail(ctx, email)
+	if errors.Is(err, model.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -645,12 +630,12 @@ func (s *Service) ResendVerification(ctx context.Context, email, lang string) er
 	if user.EmailVerifiedAt != nil || user.Status != authz.StatusActive {
 		return nil
 	}
-	last, err := s.store.q.LatestVerificationTokenAt(ctx, user.ID)
+	last, err := s.verifications.LatestCreatedAt(ctx, user.ID)
 	var lastSent *time.Time
 	switch {
 	case err == nil:
 		lastSent = &last
-	case !errors.Is(err, pgx.ErrNoRows):
+	case !errors.Is(err, model.ErrNotFound):
 		return err
 	}
 	now := s.now()
@@ -662,11 +647,11 @@ func (s *Service) ResendVerification(ctx context.Context, email, lang string) er
 	if err != nil {
 		return err
 	}
-	err = s.store.InTx(ctx, func(q *sqlcgen.Queries) error {
-		if err := q.InvalidateVerificationTokens(ctx, sqlcgen.InvalidateVerificationTokensParams{UserID: user.ID, Now: now}); err != nil {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.verifications.InvalidateForUser(ctx, user.ID, now); err != nil {
 			return err
 		}
-		return s.insertVerificationToken(ctx, q, user.ID, hash, now)
+		return s.insertVerificationToken(ctx, user.ID, hash, now)
 	})
 	if err != nil {
 		return err
@@ -675,18 +660,18 @@ func (s *Service) ResendVerification(ctx context.Context, email, lang string) er
 	return nil
 }
 
-func (s *Service) insertVerificationToken(ctx context.Context, q *sqlcgen.Queries, userID uuid.UUID, hash []byte, now time.Time) error {
+func (s *AuthService) insertVerificationToken(ctx context.Context, userID uuid.UUID, hash []byte, now time.Time) error {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return fmt.Errorf("make verification token id: %w", err)
 	}
-	return q.InsertVerificationToken(ctx, sqlcgen.InsertVerificationTokenParams{
-		ID: id, UserID: userID, TokenHash: hash, ExpiresAt: now.Add(s.opts.VerificationTTL), Now: now,
-	})
+	return s.verifications.Insert(ctx, model.NewVerificationToken{
+		ID: id, UserID: userID, Hash: hash, ExpiresAt: now.Add(s.opts.VerificationTTL),
+	}, now)
 }
 
 // sendVerification emails the link in the background. The raw token only goes into the message: it is never logged.
-func (s *Service) sendVerification(ctx context.Context, fullName, email, token, lang string) {
+func (s *AuthService) sendVerification(ctx context.Context, fullName, email, token, lang string) {
 	link := strings.TrimRight(s.opts.WebURL, "/") + "/verify-email?token=" + url.QueryEscape(token)
 	msg, err := s.renderer.VerifyEmail(lang, mail.VerifyEmail{To: email, FullName: fullName, URL: link, ExpiresIn: s.opts.VerificationTTL})
 	if err != nil {
@@ -704,9 +689,14 @@ func (s *Service) sendVerification(ctx context.Context, fullName, email, token, 
 	})
 }
 
+// roleGranter is the part of the user repository that adds a role.
+type roleGranter interface {
+	AddRole(ctx context.Context, userID uuid.UUID, role string, now time.Time) error
+}
+
 // assignRoles gives the user the roles. Unknown roles are refused, and a staff role is never put together with
 // another kind of role: this is the only place roles are granted.
-func assignRoles(ctx context.Context, q *sqlcgen.Queries, userID uuid.UUID, roles []string, now time.Time) error {
+func assignRoles(ctx context.Context, users roleGranter, userID uuid.UUID, roles []string, now time.Time) error {
 	for _, role := range roles {
 		if authz.Seniority(role) == 0 {
 			return fmt.Errorf("unknown role %q", role)
@@ -716,35 +706,9 @@ func assignRoles(ctx context.Context, q *sqlcgen.Queries, userID uuid.UUID, role
 		return errors.New("staff roles cannot be mixed with other roles")
 	}
 	for _, role := range roles {
-		if err := q.AddUserRole(ctx, sqlcgen.AddUserRoleParams{UserID: userID, RoleCode: role, Now: now}); err != nil {
+		if err := users.AddRole(ctx, userID, role, now); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func contains(list []string, item string) bool {
-	for _, v := range list {
-		if v == item {
-			return true
-		}
-	}
-	return false
-}
-
-func uuidStrings(ids []uuid.UUID) []string {
-	out := make([]string, len(ids))
-	for i, id := range ids {
-		out[i] = id.String()
-	}
-	return out
 }

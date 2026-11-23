@@ -1,4 +1,4 @@
-package identity
+package service
 
 import (
 	"testing"
@@ -76,16 +76,9 @@ func TestInitialRole(t *testing.T) {
 	}
 }
 
-func TestNormalizeEmailAndBlankToNil(t *testing.T) {
-	if got := normalizeEmail("  Ann.Lee@Example.VN "); got != "ann.lee@example.vn" {
+func TestNormalizeEmail(t *testing.T) {
+	if got := NormalizeEmail("  Ann.Lee@Example.VN "); got != "ann.lee@example.vn" {
 		t.Errorf("got %q", got)
-	}
-	blank, text := "   ", " 0901 "
-	if blankToNil(nil) != nil || blankToNil(&blank) != nil {
-		t.Error("nothing or blank means not given")
-	}
-	if got := blankToNil(&text); got == nil || *got != "0901" {
-		t.Errorf("got %v", got)
 	}
 }
 

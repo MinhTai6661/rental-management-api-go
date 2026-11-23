@@ -1,38 +1,18 @@
-package identity
+package service
 
 import (
 	"context"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	sqlcgen "rental-management/internal/repository/sqlc"
-	"rental-management/pkg/db"
 )
-
-// Store gives the service its queries, plain or inside one transaction.
-type Store struct {
-	pool *pgxpool.Pool
-	q    *sqlcgen.Queries
-}
-
-// NewStore returns a store on the pool.
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool, q: sqlcgen.New(pool)} }
-
-// InTx runs fn with queries bound to one transaction: it commits when fn returns nil, rolls back otherwise.
-func (s *Store) InTx(ctx context.Context, fn func(q *sqlcgen.Queries) error) error {
-	return db.WithTx(ctx, s.pool, func(tx pgx.Tx) error { return fn(s.q.WithTx(tx)) })
-}
 
 // permissionCache keeps the permission set of each role in memory for a short time, so a request does not read
 // the role_permissions table. A role's permissions change only when the catalog is seeded, so a minute of delay is fine.
 type permissionCache struct {
-	q   *sqlcgen.Queries
-	ttl time.Duration
-	now func() time.Time
+	repo PermissionRepository
+	ttl  time.Duration
+	now  func() time.Time
 
 	mu      sync.Mutex
 	entries map[string]cachedPermissions
@@ -43,8 +23,8 @@ type cachedPermissions struct {
 	expires time.Time
 }
 
-func newPermissionCache(q *sqlcgen.Queries, ttl time.Duration, now func() time.Time) *permissionCache {
-	return &permissionCache{q: q, ttl: ttl, now: now, entries: map[string]cachedPermissions{}}
+func newPermissionCache(repo PermissionRepository, ttl time.Duration, now func() time.Time) *permissionCache {
+	return &permissionCache{repo: repo, ttl: ttl, now: now, entries: map[string]cachedPermissions{}}
 }
 
 // ForRole returns the permissions of the role. The returned set is shared: callers must not modify it.
@@ -57,7 +37,7 @@ func (c *permissionCache) ForRole(ctx context.Context, role string) (map[string]
 		return entry.set, nil
 	}
 
-	codes, err := c.q.ListPermissionCodesOfRole(ctx, role)
+	codes, err := c.repo.CodesOfRole(ctx, role)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +51,8 @@ func (c *permissionCache) ForRole(ctx context.Context, role string) (map[string]
 	return set, nil
 }
 
-// sortedKeys lists a permission set in a stable order for the API.
-func sortedKeys(set map[string]struct{}) []string {
+// sortedPermissionCodes lists a permission set in a stable order for the API.
+func sortedPermissionCodes(set map[string]struct{}) []string {
 	keys := make([]string, 0, len(set))
 	for k := range set {
 		keys = append(keys, k)

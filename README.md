@@ -106,24 +106,38 @@ pkg/                          INFRASTRUCTURE shared by every module; no business
 
 internal/
   app/                        wiring: builds the dependencies and the router, runs the server and the commands
-  repository/sqlc/            the one generated sqlc package (all queries of db/queries)
-  modules/                    BUSINESS: one directory per feature, each with routes, handler, service, store, rules
-    identity/                 accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
+  router/                     route registration (gin groups), one file per feature: auth_routes.go
+  handler/                    HTTP handlers (gin), one file per feature: auth_handler.go
+  service/                    use cases + pure business rules; declares the repository interfaces it needs (auth_ports.go)
+  repository/                 database and Redis: the only code that imports pgx / go-redis and the generated sqlc package
+    sqlc/                     the one generated sqlc package (all queries of db/queries)
+  model/                      plain structs: entities, request and response bodies, domain errors (ErrNotFound, ConstraintError)
+  modules/                    features not moved to the layers yet (a feature directory has its own routes, handler, service, store)
     location/                 provinces and wards (public, rate limited, cacheable)
     property/                 buildings, rooms, charges and pictures (upload, cover, arrangement, public serving); one module because a building edit reaches its rooms in one transaction
 ```
 
-Where does new code go? Business behaviour of a feature -> `internal/modules/<feature>/`. A technical tool several
-features share (HTTP, database, mail, i18n...) -> `pkg/` (settings -> `config/`). Nothing else goes in `internal/`.
+Identity (accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed) is already split
+into these layers and is the template: `model/{user,session,auth_request,auth_response,permission}.go`,
+`repository/{user,session,verification,permission,revocation}_repository.go`, `service/auth_*.go` + `identity_seed.go`,
+`handler/auth_handler.go`, `router/auth_routes.go`. `location` and `property` are still being moved the same way.
 
-Rules (checked in review and by the linters):
+Where does new code go? Business behaviour -> the layers above. A technical tool several features share (HTTP,
+database, mail, i18n...) -> `pkg/` (settings -> `config/`). Nothing else goes in `internal/`.
 
-- Direction: `modules -> pkg, config` only, never the reverse; a module never imports another module. Inside a module: `handler -> service -> store / pure rules / ports`. Services and pure rules never see HTTP or gin.
-- **gin is imported only** by `httpx`, `app` and the `handler.go` / `routes.go` files of a module.
+Rules (checked in review and by the linters, see `.golangci.yml`):
+
+- Direction: `router -> handler -> service -> model`, and `repository -> model`; `app` wires them. Everything may use `pkg` and `config`, never the reverse.
+- **service** declares the interfaces it needs from the outside (repositories, transaction manager) and never imports `repository`, gin, pgx or go-redis; the concrete repositories satisfy those interfaces implicitly.
+- **repository** returns model types, never sqlc rows, and translates driver errors: no rows -> `model.ErrNotFound`, unique / foreign key violations -> `*model.ConstraintError` (`model.IsUnique`, `model.IsForeignKey`).
+- **Transactions travel in the context**: `service` calls `tx.WithinTx(ctx, func(ctx) error {...})` and every repository call made with that ctx joins the transaction (`repository.TxManager`, `queries(ctx, pool)`).
+- **model** imports only the standard library, uuid and `pkg/authz` constants.
+- **gin is imported only** by `pkg/httpx`, `app`, `handler` and `router`.
 - All error-to-HTTP mapping happens in `httpx.Fail`; services return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
 - There is only one generated query package, `internal/repository/sqlc` (query names are unique across all of `db/queries`).
-- Pure business rules (calculations, state machines) live in small, DB-free functions with table tests.
+- Pure business rules (calculations, state machines) live in small, DB-free functions with table tests; services are also tested with hand-written fakes of the repository interfaces (no database).
+- Feature modules still in `internal/modules` never import each other or the layers.
 
 ## API
 
@@ -343,7 +357,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 
 - **Roles and permissions**: five roles (`super_admin`, `admin`, `landlord`, `manager`, `tenant`); a person holds
   several, but staff roles (`super_admin`, `admin`) are never mixed with the others (`authz.MixesStaffWithOthers`).
-  Register grants `tenant` only. The permission catalog is Go data (`internal/modules/identity/catalog.go`), written to
+  Register grants `tenant` only. The permission catalog is Go data (`internal/model/permission.go`), written to
   `roles`, `permissions`, `role_permissions` by `seed`. Permissions are `resource.action`; `resource.manage` covers
   every `resource.*`. A request acts in **one role** (the active role): its permissions are the only ones it has.
 - **Access token**: JWT HS256, 15 minutes, claims `iss, sub (user id), sid (session id), role, jti, iat, exp`.
@@ -400,9 +414,10 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
 2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/repository/sqlc`).
-3. `internal/modules/<module>/`: `store.go` (wraps the generated `sqlc` package), `service.go` (returns `apperr`), `handler.go` + `routes.go` (the
-   only gin files), pure rules in small DB-free functions with table tests.
-4. New permissions: add them to `internal/modules/identity/catalog.go` and the role matrix, then `make seed`.
+3. One file per layer, named after the feature (see identity): `internal/model/<feature>.go`, `internal/repository/<feature>_repository.go`,
+   `internal/service/<feature>_service.go` + `<feature>_ports.go` (returns `apperr`), `internal/handler/<feature>_handler.go`,
+   `internal/router/<feature>_routes.go`; pure rules in small DB-free functions with table tests. (location and property still use `internal/modules/<module>/` until they are moved.)
+4. New permissions: add them to `internal/model/permission.go` and the role matrix, then `make seed`.
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.
 7. Mount the module in `internal/app` and add its routes to the API table above.
@@ -432,7 +447,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Statistics: `MonthRange`, `OccupancyCalculator`, `Ratio` | `internal/stats` |
 | Announcement: `AudienceCriteria`, `DayRange`, `PopupVisibility` | `internal/notification` |
 | Audit: `MoneyRedaction` | `internal/audit` |
-| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/modules/identity` (social login) |
+| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/service` (identity, social login) |
 | Invitation: `InvitationAudience` | `internal/invitation` |
 | Legal: `RichText` | `internal/legal` |
 | Support: `RoleAccess` | `pkg/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |

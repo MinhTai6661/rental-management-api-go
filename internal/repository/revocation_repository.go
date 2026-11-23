@@ -1,4 +1,4 @@
-package identity
+package repository
 
 import (
 	"context"
@@ -10,23 +10,25 @@ import (
 	"rental-management/pkg/apperr"
 )
 
-// Revocations remembers in Redis which access tokens and sessions were closed before their natural expiry
+// RevocationRepository remembers in Redis which access tokens and sessions were closed before their natural expiry
 // (logout, role switch, password change, stolen refresh token). A key only has to live as long as the access
 // tokens it covers, so Redis forgets them by itself.
 //
 // Every method fails closed: when Redis cannot answer, the request gets a 503 and nothing is let through.
-type Revocations struct {
+type RevocationRepository struct {
 	client *redis.Client
 	prefix string
 }
 
-// NewRevocations returns the store; prefix is the Redis key prefix of the application.
-func NewRevocations(client *redis.Client, prefix string) *Revocations {
-	return &Revocations{client: client, prefix: prefix}
+// NewRevocationRepository returns the repository; prefix is the Redis key prefix of the application.
+func NewRevocationRepository(client *redis.Client, prefix string) *RevocationRepository {
+	return &RevocationRepository{client: client, prefix: prefix}
 }
 
-func (r *Revocations) tokenKey(jti string) string { return r.prefix + "auth:revoked_jti:" + jti }
-func (r *Revocations) sessionKey(sid string) string {
+func (r *RevocationRepository) tokenKey(jti string) string {
+	return r.prefix + "auth:revoked_jti:" + jti
+}
+func (r *RevocationRepository) sessionKey(sid string) string {
 	return r.prefix + "auth:revoked_sid:" + sid
 }
 
@@ -34,7 +36,7 @@ func (r *Revocations) sessionKey(sid string) string {
 const minRevocationTTL = time.Second
 
 // RevokeToken blocks one access token until it would have expired anyway.
-func (r *Revocations) RevokeToken(ctx context.Context, jti string, ttl time.Duration) error {
+func (r *RevocationRepository) RevokeToken(ctx context.Context, jti string, ttl time.Duration) error {
 	if err := r.client.Set(ctx, r.tokenKey(jti), "1", max(ttl, minRevocationTTL)).Err(); err != nil {
 		return apperr.Busy(fmt.Errorf("revoke token: %w", err))
 	}
@@ -42,7 +44,7 @@ func (r *Revocations) RevokeToken(ctx context.Context, jti string, ttl time.Dura
 }
 
 // RevokeSessions blocks every access token of the sessions for ttl (the life of an access token).
-func (r *Revocations) RevokeSessions(ctx context.Context, sids []string, ttl time.Duration) error {
+func (r *RevocationRepository) RevokeSessions(ctx context.Context, sids []string, ttl time.Duration) error {
 	if len(sids) == 0 {
 		return nil
 	}
@@ -57,7 +59,7 @@ func (r *Revocations) RevokeSessions(ctx context.Context, sids []string, ttl tim
 }
 
 // IsRevoked reports whether the token or its session was revoked.
-func (r *Revocations) IsRevoked(ctx context.Context, jti, sid string) (bool, error) {
+func (r *RevocationRepository) IsRevoked(ctx context.Context, jti, sid string) (bool, error) {
 	values, err := r.client.MGet(ctx, r.tokenKey(jti), r.sessionKey(sid)).Result()
 	if err != nil {
 		return false, apperr.Busy(fmt.Errorf("check revocation: %w", err))

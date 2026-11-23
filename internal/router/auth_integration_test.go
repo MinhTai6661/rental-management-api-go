@@ -1,15 +1,18 @@
 //go:build integration
 
-package identity
+package router_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,13 +22,46 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	sqlcgen "rental-management/internal/repository/sqlc"
+	"rental-management/internal/handler"
+	"rental-management/internal/model"
+	"rental-management/internal/repository"
+	"rental-management/internal/router"
+	"rental-management/internal/service"
 	"rental-management/pkg/authz"
 	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/mail"
 	"rental-management/pkg/ratelimit"
+	"rental-management/pkg/testdb"
 )
+
+var (
+	pg  *testdb.Postgres
+	rds *testdb.Redis
+)
+
+func TestMain(m *testing.M) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	var err error
+	if pg, err = testdb.StartPostgres(ctx); err == nil {
+		rds, err = testdb.StartRedis(ctx)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	rds.Terminate()
+	pg.Terminate()
+	os.Exit(code)
+}
+
+const testSecret = "0123456789abcdef0123456789abcdef"
+
+type testClock struct{ t time.Time }
+
+func (c *testClock) now() time.Time { return c.t }
 
 const (
 	testPassword = "correct-horse-battery"
@@ -40,8 +76,8 @@ type env struct {
 	rdb    *redis.Client
 	mailer *mail.Recorder
 	clock  *testClock
-	tokens *TokenIssuer
-	svc    *Service
+	tokens *service.TokenIssuer
+	svc    *service.AuthService
 	engine *gin.Engine
 }
 
@@ -49,7 +85,8 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	ctx := context.Background()
 	e := &env{t: t, pool: pg.NewDB(t), rdb: rds.Client(t), mailer: &mail.Recorder{}, clock: &testClock{time.Now().UTC()}}
-	if err := Seed(ctx, e.pool); err != nil {
+	tx := repository.NewTxManager(e.pool)
+	if err := service.SeedCatalog(ctx, tx, repository.NewPermissionRepository(e.pool)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,12 +95,14 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.DiscardHandler)
-	e.tokens = NewTokenIssuer(testSecret, "rental-management", 15*time.Minute, 5*time.Second, e.clock.now)
-	e.svc, err = NewService(Deps{
-		Store: NewStore(e.pool), Tokens: e.tokens, Revocations: NewRevocations(e.rdb, "test:"),
+	e.tokens = service.NewTokenIssuer(testSecret, "rental-management", 15*time.Minute, 5*time.Second, e.clock.now)
+	e.svc, err = service.NewAuthService(service.AuthDeps{
+		Tx: tx, Users: repository.NewUserRepository(e.pool), Sessions: repository.NewSessionRepository(e.pool),
+		Verifications: repository.NewVerificationRepository(e.pool), Permissions: repository.NewPermissionRepository(e.pool),
+		Revocations: repository.NewRevocationRepository(e.rdb, "test:"), Tokens: e.tokens,
 		Mailer: e.mailer, Renderer: renderer, Log: log, Now: e.clock.now,
 		Dispatch: func(work func()) { work() }, // inline: the test reads the email right after the request
-	}, Options{
+	}, service.AuthOptions{
 		TermsVersion: "2026-11-03", WebURL: "http://localhost:2001", RefreshTTL: 720 * time.Hour,
 		ReuseGrace: 10 * time.Second, VerificationTTL: 24 * time.Hour, ResendCooldown: 60 * time.Second,
 		RevokedFor: 15*time.Minute + 5*time.Second, PermissionCacheTTL: time.Minute,
@@ -78,7 +117,8 @@ func newEnv(t *testing.T) *env {
 	}
 	e.engine = gin.New()
 	e.engine.Use(httpx.RequestID(log), httpx.Locale(catalog), httpx.Recover())
-	Mount(e.svc, RouteOptions{Limiter: ratelimit.NewRedis(e.rdb, "test:")})(e.engine.Group("/v1"))
+	limiter := ratelimit.NewRedis(e.rdb, "test:")
+	router.MountAuth(e.engine.Group("/v1"), handler.NewAuthHandler(e.svc, httpx.NewBinder(), limiter), e.svc, limiter)
 	return e
 }
 
@@ -178,7 +218,7 @@ func (e *env) register(email string) string {
 		"full_name": "Nguyễn Văn A", "email": email, "password": testPassword, "accept_terms": true,
 	}, "")
 	expectStatus(e.t, w, http.StatusCreated)
-	return decodeData[UserView](e.t, w).ID
+	return decodeData[model.UserView](e.t, w).ID
 }
 
 // verified registers an account and confirms its email.
@@ -194,11 +234,11 @@ func (e *env) login(email, password string) *httptest.ResponseRecorder {
 }
 
 // signedIn logs an account in and returns what the client receives.
-func (e *env) signedIn(email string) LoginResult {
+func (e *env) signedIn(email string) model.LoginResult {
 	e.t.Helper()
 	w := e.login(email, testPassword)
 	expectStatus(e.t, w, http.StatusOK)
-	return decodeData[LoginResult](e.t, w)
+	return decodeData[model.LoginResult](e.t, w)
 }
 
 func (e *env) refresh(token string) *httptest.ResponseRecorder {
@@ -224,7 +264,7 @@ func TestRegisterVerifyLoginMeRefresh(t *testing.T) {
 	if strings.Contains(strings.ToLower(w.Body.String()), "password") {
 		t.Errorf("the response must not mention passwords: %s", w.Body.String())
 	}
-	user := decodeData[UserView](t, w)
+	user := decodeData[model.UserView](t, w)
 	if user.Email == nil || *user.Email != "ann.lee@example.vn" || user.FullName != "Nguyễn Văn A" ||
 		len(user.Roles) != 1 || user.Roles[0] != authz.RoleTenant || user.ActiveRole != authz.RoleTenant ||
 		user.AddressDetail != nil || user.Terms.NeedsAcceptance || user.Terms.CurrentVersion != "2026-11-03" {
@@ -259,7 +299,7 @@ func TestRegisterVerifyLoginMeRefresh(t *testing.T) {
 	// The refresh token is stored as a hash only.
 	var raw, hashed int
 	_ = e.pool.QueryRow(context.Background(), `SELECT count(*) FROM refresh_tokens WHERE token_hash = $1`, []byte(result.Tokens.RefreshToken)).Scan(&raw)
-	_ = e.pool.QueryRow(context.Background(), `SELECT count(*) FROM refresh_tokens WHERE token_hash = $1`, HashToken(result.Tokens.RefreshToken)).Scan(&hashed)
+	_ = e.pool.QueryRow(context.Background(), `SELECT count(*) FROM refresh_tokens WHERE token_hash = $1`, service.HashToken(result.Tokens.RefreshToken)).Scan(&hashed)
 	if raw != 0 || hashed != 1 {
 		t.Errorf("refresh token storage: %d raw rows, %d hashed rows", raw, hashed)
 	}
@@ -267,8 +307,8 @@ func TestRegisterVerifyLoginMeRefresh(t *testing.T) {
 	// Me: the user with the permissions of the active role.
 	w = e.call(http.MethodGet, "/v1/auth/me", nil, result.Tokens.AccessToken)
 	expectStatus(t, w, http.StatusOK)
-	me := decodeData[UserView](t, w)
-	if me.ID != user.ID || me.ActiveRole != authz.RoleTenant || !contains(me.Permissions, "rooms.view") || contains(me.Permissions, "rooms.manage") {
+	me := decodeData[model.UserView](t, w)
+	if me.ID != user.ID || me.ActiveRole != authz.RoleTenant || !slices.Contains(me.Permissions, "rooms.view") || slices.Contains(me.Permissions, "rooms.manage") {
 		t.Fatalf("unexpected me: %+v", me)
 	}
 
@@ -276,7 +316,7 @@ func TestRegisterVerifyLoginMeRefresh(t *testing.T) {
 	w = e.refresh(result.Tokens.RefreshToken)
 	expectStatus(t, w, http.StatusOK)
 	next := decodeData[struct {
-		Tokens Tokens `json:"tokens"`
+		Tokens model.Tokens `json:"tokens"`
 	}](t, w).Tokens
 	if next.RefreshToken == result.Tokens.RefreshToken || next.AccessToken == "" {
 		t.Fatalf("refresh must rotate the token: %+v", next)
@@ -312,7 +352,7 @@ func TestRegisterValidation(t *testing.T) {
 		"full_name": "A", "email": "sneaky@example.vn", "password": testPassword, "accept_terms": true, "roles": []string{"super_admin"}, "role": "admin",
 	}, "")
 	expectStatus(t, w, http.StatusCreated)
-	if got := decodeData[UserView](t, w).Roles; len(got) != 1 || got[0] != authz.RoleTenant {
+	if got := decodeData[model.UserView](t, w).Roles; len(got) != 1 || got[0] != authz.RoleTenant {
 		t.Errorf("only tenant may be granted, got %v", got)
 	}
 	// The body size limit is still enforced.
@@ -331,7 +371,7 @@ func TestMeShowsTheWardAndProvince(t *testing.T) {
 	expectStatus(t, w, http.StatusCreated)
 	expectStatus(t, e.call(http.MethodPost, "/v1/auth/email/verify", map[string]any{"token": e.lastVerificationToken("ward@example.vn")}, ""), http.StatusNoContent)
 
-	me := decodeData[UserView](t, e.call(http.MethodGet, "/v1/auth/me", nil, e.signedIn("ward@example.vn").Tokens.AccessToken))
+	me := decodeData[model.UserView](t, e.call(http.MethodGet, "/v1/auth/me", nil, e.signedIn("ward@example.vn").Tokens.AccessToken))
 	if me.Ward == nil || me.Ward.Code != 26734 || me.Ward.Name != "Phường Bến Thành" || me.Ward.Province.Code != 79 || me.Ward.Province.Name != "Thành phố Hồ Chí Minh" {
 		t.Fatalf("ward and province expected: %+v", me.Ward)
 	}
@@ -346,7 +386,7 @@ func TestRefreshReuseAfterTheGraceWindowClosesTheWholeSession(t *testing.T) {
 	w := e.refresh(login.Tokens.RefreshToken)
 	expectStatus(t, w, http.StatusOK)
 	current := decodeData[struct {
-		Tokens Tokens `json:"tokens"`
+		Tokens model.Tokens `json:"tokens"`
 	}](t, w).Tokens
 
 	// Later somebody presents the OLD token: it was copied. The whole session is closed ...
@@ -375,10 +415,10 @@ func TestRefreshTwiceWithinTheGraceWindowIsAllowed(t *testing.T) {
 	expectStatus(t, second, http.StatusOK)
 
 	a := decodeData[struct {
-		Tokens Tokens `json:"tokens"`
+		Tokens model.Tokens `json:"tokens"`
 	}](t, first).Tokens
 	b := decodeData[struct {
-		Tokens Tokens `json:"tokens"`
+		Tokens model.Tokens `json:"tokens"`
 	}](t, second).Tokens
 	if a.RefreshToken == b.RefreshToken {
 		t.Error("each refresh hands out its own token")
@@ -419,7 +459,7 @@ func TestLogoutAllEndsEverySession(t *testing.T) {
 
 	expectStatus(t, e.call(http.MethodPost, "/v1/auth/logout-all", nil, phone.Tokens.AccessToken), http.StatusNoContent)
 
-	for name, tokens := range map[string]Tokens{"phone": phone.Tokens, "laptop": laptop.Tokens} {
+	for name, tokens := range map[string]model.Tokens{"phone": phone.Tokens, "laptop": laptop.Tokens} {
 		expectError(t, e.call(http.MethodGet, "/v1/auth/me", nil, tokens.AccessToken), http.StatusUnauthorized, "auth.unauthenticated")
 		if w := e.refresh(tokens.RefreshToken); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s: the refresh token must be dead, got %d", name, w.Code)
@@ -448,12 +488,12 @@ func TestSwitchRole(t *testing.T) {
 	// The switch itself.
 	w := e.call(http.MethodPost, "/v1/auth/switch-role", map[string]any{"role": "landlord", "refresh_token": login.Tokens.RefreshToken}, login.Tokens.AccessToken)
 	expectStatus(t, w, http.StatusOK)
-	switched := decodeData[LoginResult](t, w)
+	switched := decodeData[model.LoginResult](t, w)
 	newClaims, err := e.tokens.Verify(switched.Tokens.AccessToken)
 	if err != nil || switched.User.ActiveRole != authz.RoleLandlord || newClaims.Role != authz.RoleLandlord || newClaims.SessionID == oldClaims.SessionID {
 		t.Fatalf("a new session in the landlord role expected: %+v, %+v, %v", switched.User, newClaims, err)
 	}
-	if !contains(switched.User.Permissions, "rooms.manage") {
+	if !slices.Contains(switched.User.Permissions, "rooms.manage") {
 		t.Errorf("the landlord permissions expected: %v", switched.User.Permissions)
 	}
 
@@ -522,6 +562,7 @@ func TestLoginIsRateLimitedPerAddressAndEmail(t *testing.T) {
 	e := newEnv(t)
 	e.verified("limit@example.vn")
 
+	const loginEmailLimit = 5 // the per address and email limit of the login handler
 	for i := 1; i <= loginEmailLimit; i++ {
 		expectError(t, e.login("limit@example.vn", "wrong-password"), http.StatusUnauthorized, "auth.invalid_credentials")
 	}
@@ -648,7 +689,7 @@ func TestSeedDemoIsIdempotentAndNeverMixesStaff(t *testing.T) {
 	e.exec(`INSERT INTO wards (code, province_code, name, administrative_level, slug) VALUES (26734, 79, 'Phường Bến Thành', 'ward', 'ben_thanh')`)
 
 	for i := 0; i < 2; i++ {
-		if _, err := SeedDemo(ctx, e.pool, "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
+		if _, err := service.SeedDemo(ctx, repository.NewTxManager(e.pool), repository.NewUserRepository(e.pool), "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
 			t.Fatalf("seed %d: %v", i+1, err)
 		}
 	}
@@ -665,28 +706,12 @@ func TestSeedDemoIsIdempotentAndNeverMixesStaff(t *testing.T) {
 	} {
 		w := e.login(email, "demo-password-123")
 		expectStatus(t, w, http.StatusOK)
-		got := decodeData[LoginResult](t, w).User
+		got := decodeData[model.LoginResult](t, w).User
 		if got.ActiveRole != role || got.Terms.NeedsAcceptance {
 			t.Errorf("%s: role %s, needs acceptance %v", email, got.ActiveRole, got.Terms.NeedsAcceptance)
 		}
 		if (role == authz.RoleLandlord || role == authz.RoleTenant) && got.Ward == nil {
 			t.Errorf("%s should have an address", email)
 		}
-	}
-
-	// A staff role is never put together with another kind of role, by any code path.
-	id := uuid.New()
-	e.exec(`INSERT INTO users (id, email, full_name) VALUES ($1, 'mixed@example.vn', 'Mixed')`, id)
-	err := e.svc.store.InTx(ctx, func(q *sqlcgen.Queries) error {
-		return assignRoles(ctx, q, id, []string{authz.RoleAdmin, authz.RoleTenant}, e.clock.now())
-	})
-	if err == nil {
-		t.Error("admin together with tenant must be refused")
-	}
-	err = e.svc.store.InTx(ctx, func(q *sqlcgen.Queries) error {
-		return assignRoles(ctx, q, id, []string{"wizard"}, e.clock.now())
-	})
-	if err == nil {
-		t.Error("an unknown role must be refused")
 	}
 }

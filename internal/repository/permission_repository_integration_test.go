@@ -1,43 +1,19 @@
 //go:build integration
 
-package identity
+package repository
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"reflect"
 	"slices"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"rental-management/internal/model"
 	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/authz"
-	"rental-management/pkg/testdb"
 )
-
-var (
-	pg  *testdb.Postgres
-	rds *testdb.Redis
-)
-
-func TestMain(m *testing.M) {
-	gin.SetMode(gin.TestMode)
-	ctx := context.Background()
-	var err error
-	if pg, err = testdb.StartPostgres(ctx); err == nil {
-		rds, err = testdb.StartRedis(ctx)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	code := m.Run()
-	rds.Terminate()
-	pg.Terminate()
-	os.Exit(code)
-}
 
 // snapshot reads the three catalog tables back as the catalog would describe them.
 func snapshot(t *testing.T, q *sqlcgen.Queries) (roles map[string]sqlcgen.Role, perms []string, granted map[string][]string) {
@@ -72,18 +48,29 @@ func snapshot(t *testing.T, q *sqlcgen.Queries) (roles map[string]sqlcgen.Role, 
 	return roles, perms, granted
 }
 
-func TestSeedMatchesTheCatalogAndIsIdempotent(t *testing.T) {
+// seedCatalog seeds the catalog the way the seed command does: in one transaction, from authz and the model.
+func seedCatalog(ctx context.Context, pool *pgxpool.Pool) error {
+	var roles []model.Role
+	for _, code := range authz.Roles() {
+		roles = append(roles, model.Role{Code: code, Seniority: authz.Seniority(code), IsStaff: authz.IsStaff(code)})
+	}
+	return NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
+		return NewPermissionRepository(pool).SeedCatalog(ctx, roles, model.Permissions(), model.RolePermissions())
+	})
+}
+
+func TestSeedCatalogMatchesTheCatalogAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	pool := pg.NewDB(t)
 	q := sqlcgen.New(pool)
 
-	if err := Seed(ctx, pool); err != nil {
+	if err := seedCatalog(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	rolesFirst, permsFirst, grantedFirst := snapshot(t, q)
 
 	// Running it again changes nothing.
-	if err := Seed(ctx, pool); err != nil {
+	if err := seedCatalog(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	rolesSecond, permsSecond, grantedSecond := snapshot(t, q)
@@ -105,23 +92,23 @@ func TestSeedMatchesTheCatalogAndIsIdempotent(t *testing.T) {
 
 	// Permissions and the role matrix equal the catalog.
 	var wantPerms []string
-	for _, p := range Permissions() {
+	for _, p := range model.Permissions() {
 		wantPerms = append(wantPerms, p.Code)
 	}
 	if !slices.Equal(permsFirst, wantPerms) {
 		t.Errorf("permissions stored differ from the catalog:\n got %v\nwant %v", permsFirst, wantPerms)
 	}
-	for role, want := range RolePermissions() {
+	for role, want := range model.RolePermissions() {
 		if !slices.Equal(grantedFirst[role], want) {
 			t.Errorf("permissions of %s:\n got %v\nwant %v", role, grantedFirst[role], want)
 		}
 	}
 }
 
-func TestSeedRemovesStalePermissionsAndRepairsGrants(t *testing.T) {
+func TestSeedCatalogRemovesStalePermissionsAndRepairsGrants(t *testing.T) {
 	ctx := context.Background()
 	pool := pg.NewDB(t)
-	if err := Seed(ctx, pool); err != nil {
+	if err := seedCatalog(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,14 +124,14 @@ func TestSeedRemovesStalePermissionsAndRepairsGrants(t *testing.T) {
 		}
 	}
 
-	if err := Seed(ctx, pool); err != nil {
+	if err := seedCatalog(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	_, perms, granted := snapshot(t, sqlcgen.New(pool))
 	if slices.Contains(perms, "legacy.thing") {
 		t.Error("a permission outside the catalog must be removed")
 	}
-	if !slices.Equal(granted[authz.RoleTenant], RolePermissions()[authz.RoleTenant]) {
+	if !slices.Equal(granted[authz.RoleTenant], model.RolePermissions()[authz.RoleTenant]) {
 		t.Errorf("tenant grants were not repaired: %v", granted[authz.RoleTenant])
 	}
 }

@@ -33,7 +33,7 @@ func TestTranslate(t *testing.T) {
 	}
 
 	other := &pgconn.PgError{Code: "57014"}
-	if translate(other) != error(other) {
+	if !errors.Is(translate(other), other) {
 		t.Error("other errors are returned as they are")
 	}
 	again := translate(unique)

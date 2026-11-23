@@ -1,4 +1,4 @@
-package identity
+package handler
 
 import (
 	"crypto/sha256"
@@ -8,57 +8,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/model"
+	"rental-management/internal/service"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/httpx"
 )
 
-// Request bodies. The validate tags are the rules of the API; errors are reported under the json names.
-
-type registerRequest struct {
-	FullName      string  `json:"full_name" validate:"required,max=255"`
-	Email         string  `json:"email" validate:"required,email,max=255"`
-	Password      string  `json:"password" validate:"required,min=8,max=128"`
-	PhoneNumber   *string `json:"phone_number" validate:"omitempty,max=20"`
-	AddressDetail *string `json:"address_detail" validate:"omitempty,max=500"`
-	WardCode      *int32  `json:"ward_code"`
-	AcceptTerms   bool    `json:"accept_terms" validate:"accepted"`
-}
-
-type loginRequest struct {
-	Email    string `json:"email" validate:"required,email,max=255"`
-	Password string `json:"password" validate:"required,max=128"`
-}
-
-type refreshRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required,max=512"`
-}
-
-type logoutRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"omitempty,max=512"`
-}
-
-type switchRoleRequest struct {
-	Role         string `json:"role" validate:"required,oneof=super_admin admin landlord manager tenant"`
-	RefreshToken string `json:"refresh_token" validate:"required,max=512"`
-}
-
-type changePasswordRequest struct {
-	CurrentPassword string `json:"current_password" validate:"required,max=128"`
-	NewPassword     string `json:"new_password" validate:"required,min=8,max=128"`
-}
-
-type verifyEmailRequest struct {
-	Token string `json:"token" validate:"required,max=512"`
-}
-
-type resendEmailRequest struct {
-	Email string `json:"email" validate:"required,email,max=255"`
-}
-
-type handler struct {
-	svc     *Service
+// AuthHandler serves the auth routes: it binds the request, calls the service and writes the answer.
+type AuthHandler struct {
+	svc     *service.AuthService
 	binder  *httpx.Binder
 	limiter httpx.Limiter
+}
+
+// NewAuthHandler returns the handler. The limiter counts the login attempts per address and email.
+func NewAuthHandler(svc *service.AuthService, binder *httpx.Binder, limiter httpx.Limiter) *AuthHandler {
+	return &AuthHandler{svc: svc, binder: binder, limiter: limiter}
 }
 
 // Login attempts allowed per minute for one address and email, on top of the limit per address alone.
@@ -67,17 +32,17 @@ const (
 	loginEmailWindow = time.Minute
 )
 
-func clientOf(c *gin.Context) Client {
-	return Client{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
+func clientOf(c *gin.Context) service.AuthClient {
+	return service.AuthClient{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
 }
 
-func (h handler) register(c *gin.Context) {
-	var req registerRequest
+func (h *AuthHandler) Register(c *gin.Context) {
+	var req model.RegisterRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	in := RegisterInput{
+	in := service.RegisterInput{
 		FullName: strings.TrimSpace(req.FullName), Email: req.Email, Password: req.Password,
 		PhoneNumber: blankToNil(req.PhoneNumber), AddressDetail: blankToNil(req.AddressDetail), WardCode: req.WardCode,
 		Lang: httpx.Localize(c).Locale(),
@@ -94,8 +59,8 @@ func (h handler) register(c *gin.Context) {
 	httpx.Created(c, user)
 }
 
-func (h handler) login(c *gin.Context) {
-	var req loginRequest
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req model.LoginRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -115,8 +80,8 @@ func (h handler) login(c *gin.Context) {
 
 // limitLoginEmail counts a login attempt against the address and email together. The email is hashed so the
 // counter key does not hold a person's address.
-func (h handler) limitLoginEmail(c *gin.Context, email string) error {
-	sum := sha256.Sum256([]byte(normalizeEmail(email)))
+func (h *AuthHandler) limitLoginEmail(c *gin.Context, email string) error {
+	sum := sha256.Sum256([]byte(service.NormalizeEmail(email)))
 	key := "login-email:" + c.ClientIP() + ":" + hex.EncodeToString(sum[:8])
 	res, err := h.limiter.Allow(c.Request.Context(), key, loginEmailLimit, loginEmailWindow)
 	if err != nil {
@@ -128,8 +93,8 @@ func (h handler) limitLoginEmail(c *gin.Context, email string) error {
 	return nil
 }
 
-func (h handler) refresh(c *gin.Context) {
-	var req refreshRequest
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	var req model.RefreshRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -142,8 +107,8 @@ func (h handler) refresh(c *gin.Context) {
 	httpx.OK(c, gin.H{"tokens": tokens})
 }
 
-func (h handler) logout(c *gin.Context) {
-	var req logoutRequest
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req model.LogoutRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -156,7 +121,7 @@ func (h handler) logout(c *gin.Context) {
 	httpx.NoContent(c)
 }
 
-func (h handler) logoutAll(c *gin.Context) {
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	p, _ := httpx.PrincipalOf(c)
 	if err := h.svc.LogoutAll(c.Request.Context(), p); err != nil {
 		httpx.Fail(c, err)
@@ -165,7 +130,7 @@ func (h handler) logoutAll(c *gin.Context) {
 	httpx.NoContent(c)
 }
 
-func (h handler) me(c *gin.Context) {
+func (h *AuthHandler) Me(c *gin.Context) {
 	p, _ := httpx.PrincipalOf(c)
 	user, err := h.svc.Me(c.Request.Context(), p)
 	if err != nil {
@@ -175,8 +140,8 @@ func (h handler) me(c *gin.Context) {
 	httpx.OK(c, user)
 }
 
-func (h handler) switchRole(c *gin.Context) {
-	var req switchRoleRequest
+func (h *AuthHandler) SwitchRole(c *gin.Context) {
+	var req model.SwitchRoleRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -190,8 +155,8 @@ func (h handler) switchRole(c *gin.Context) {
 	httpx.OK(c, result)
 }
 
-func (h handler) changePassword(c *gin.Context) {
-	var req changePasswordRequest
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req model.ChangePasswordRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -204,8 +169,8 @@ func (h handler) changePassword(c *gin.Context) {
 	httpx.NoContent(c)
 }
 
-func (h handler) verifyEmail(c *gin.Context) {
-	var req verifyEmailRequest
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	var req model.VerifyEmailRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -217,8 +182,8 @@ func (h handler) verifyEmail(c *gin.Context) {
 	httpx.NoContent(c)
 }
 
-func (h handler) resendEmail(c *gin.Context) {
-	var req resendEmailRequest
+func (h *AuthHandler) ResendEmail(c *gin.Context) {
+	var req model.ResendEmailRequest
 	if err := h.binder.JSON(c, &req); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -229,23 +194,4 @@ func (h handler) resendEmail(c *gin.Context) {
 	}
 	// Always the same answer, whether or not the address has an account.
 	httpx.Accepted(c)
-}
-
-// blankToNil turns an empty or whitespace-only optional text into "not given".
-func blankToNil(s *string) *string {
-	if s == nil {
-		return nil
-	}
-	t := strings.TrimSpace(*s)
-	if t == "" {
-		return nil
-	}
-	return &t
-}
-
-func retryAfterSeconds(d time.Duration) int {
-	if d <= 0 {
-		return 1
-	}
-	return int((d + time.Second - 1) / time.Second)
 }

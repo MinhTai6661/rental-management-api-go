@@ -23,27 +23,74 @@ linters:
             - "**/pkg/**"
             - "**/config/**"
           deny:
-            - pkg: rental-management/internal/modules
-              desc: shared code must not import business modules
-            - pkg: rental-management/internal/app
-              desc: shared code must not import the wiring layer
-        # modules never import each other; they share only pkg and config.
-        identity-is-isolated:
+            - pkg: rental-management/internal
+              desc: shared code must not import business code or the wiring layer
+        # Layers (identity is split this way; location and property are still feature modules being moved).
+        # model is plain data: nothing but the standard library, uuid and the shared constants.
+        layer-model:
           files:
-            - "**/internal/modules/identity/**"
+            - "**/internal/model/**"
           deny:
-            - pkg: rental-management/internal/modules/location
-              desc: modules must not import other modules
-            - pkg: rental-management/internal/modules/property
-              desc: modules must not import other modules
-            - pkg: rental-management/internal/app
-              desc: modules must not import the wiring layer
+            - pkg: github.com/gin-gonic/gin
+              desc: model must not depend on the HTTP framework
+            - pkg: github.com/jackc
+              desc: model must not depend on the database driver
+            - pkg: github.com/redis
+              desc: model must not depend on Redis
+            - pkg: rental-management/internal/repository
+              desc: model must not import repository
+            - pkg: rental-management/internal/service
+              desc: model must not import service
+            - pkg: rental-management/internal/handler
+              desc: model must not import handler
+            - pkg: rental-management/internal/router
+              desc: model must not import router
+        # service holds the use cases and pure rules; it declares the ports it needs and never sees a driver.
+        layer-service:
+          files:
+            - "**/internal/service/**"
+          deny:
+            - pkg: github.com/gin-gonic/gin
+              desc: service must not depend on the HTTP framework
+            - pkg: github.com/jackc
+              desc: service must not depend on the database driver
+            - pkg: github.com/redis
+              desc: service must not depend on Redis
+            - pkg: rental-management/internal/repository
+              desc: service declares its own repository interfaces and must not import repository
+            - pkg: rental-management/internal/handler
+              desc: service must not import handler
+            - pkg: rental-management/internal/router
+              desc: service must not import router
+        # repository is the only place that talks to the database and Redis.
+        layer-repository:
+          files:
+            - "**/internal/repository/**"
+          deny:
+            - pkg: github.com/gin-gonic/gin
+              desc: repository must not depend on the HTTP framework
+            - pkg: rental-management/internal/service
+              desc: repository must not import service
+            - pkg: rental-management/internal/handler
+              desc: repository must not import handler
+            - pkg: rental-management/internal/router
+              desc: repository must not import router
+        # handler turns HTTP into service calls; it never touches the database or Redis.
+        layer-handler:
+          files:
+            - "**/internal/handler/**"
+          deny:
+            - pkg: github.com/jackc
+              desc: handler must not depend on the database driver
+            - pkg: github.com/redis
+              desc: handler must not depend on Redis
+            - pkg: rental-management/internal/repository
+              desc: handler must not import repository
+        # feature modules never import each other, the layers or the wiring; they share only pkg and config.
         location-is-isolated:
           files:
             - "**/internal/modules/location/**"
           deny:
-            - pkg: rental-management/internal/modules/identity
-              desc: modules must not import other modules
             - pkg: rental-management/internal/modules/property
               desc: modules must not import other modules
             - pkg: rental-management/internal/app
@@ -52,8 +99,6 @@ linters:
           files:
             - "**/internal/modules/property/**"
           deny:
-            - pkg: rental-management/internal/modules/identity
-              desc: modules must not import other modules
             - pkg: rental-management/internal/modules/location
               desc: modules must not import other modules
             - pkg: rental-management/internal/app

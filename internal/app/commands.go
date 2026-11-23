@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"rental-management/config"
-	"rental-management/internal/modules/identity"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
+	"rental-management/internal/repository"
+	"rental-management/internal/service"
 	"rental-management/pkg/db"
 	"rental-management/pkg/logger"
 	"rental-management/pkg/storage"
@@ -61,7 +62,7 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	defer pool.Close()
 
-	if err := identity.Seed(ctx, pool); err != nil {
+	if err := service.SeedCatalog(ctx, repository.NewTxManager(pool), repository.NewPermissionRepository(pool)); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(out, "seeded roles and permissions")
@@ -70,11 +71,11 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "seeded provinces and wards")
 	if *demo {
-		ids, err := identity.SeedDemo(ctx, pool, cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
+		ids, err := service.SeedDemo(ctx, repository.NewTxManager(pool), repository.NewUserRepository(pool), cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(identity.DemoAccounts()))
+		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(service.DemoAccounts()))
 
 		log, err := logger.New(io.Discard, cfg.LogLevel, cfg.LogFormat)
 		if err != nil {

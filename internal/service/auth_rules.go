@@ -1,6 +1,7 @@
-package identity
+package service
 
 import (
+	"strings"
 	"time"
 
 	"rental-management/pkg/authz"
@@ -52,4 +53,17 @@ func resendAllowed(lastSent *time.Time, now time.Time, cooldown time.Duration) b
 // initialRole is the role a new login acts in: the one used last if the user still holds it, else the most senior.
 func initialRole(held []string, lastActive string) string {
 	return authz.ResolveActiveRole("", held, lastActive)
+}
+
+// NormalizeEmail is the form an email is stored and looked up in: trimmed and lower case.
+func NormalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// hasStaffRole reports whether any of the roles is a staff role.
+func hasStaffRole(roles []string) bool {
+	for _, r := range roles {
+		if authz.IsStaff(r) {
+			return true
+		}
+	}
+	return false
 }
