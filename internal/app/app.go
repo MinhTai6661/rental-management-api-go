@@ -17,14 +17,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"rental-management/internal/config"
-	"rental-management/internal/db"
-	"rental-management/internal/i18n"
-	"rental-management/internal/identity"
-	"rental-management/internal/location"
-	"rental-management/internal/logger"
-	"rental-management/internal/mail"
-	"rental-management/internal/ratelimit"
+	"rental-management/internal/modules/identity"
+	"rental-management/internal/modules/location"
+	"rental-management/internal/platform/config"
+	"rental-management/internal/platform/db"
+	"rental-management/internal/platform/i18n"
+	"rental-management/internal/platform/logger"
+	"rental-management/internal/platform/mail"
+	"rental-management/internal/platform/ratelimit"
 )
 
 // RunAPI serves the HTTP API until ctx is cancelled, then drains in-flight requests.

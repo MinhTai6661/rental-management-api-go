@@ -14,8 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/i18n"
-	"rental-management/internal/testdb"
+	"rental-management/internal/platform/i18n"
+	"rental-management/internal/platform/testdb"
 )
 
 var (

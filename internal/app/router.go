@@ -10,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/apperr"
-	"rental-management/internal/httpx"
-	"rental-management/internal/i18n"
+	"rental-management/internal/platform/apperr"
+	"rental-management/internal/platform/httpx"
+	"rental-management/internal/platform/i18n"
 )
 
 // readyTimeout bounds how long /readyz waits for each dependency.

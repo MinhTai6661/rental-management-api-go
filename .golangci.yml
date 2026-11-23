@@ -13,6 +13,36 @@ linters:
     - bodyclose
     - misspell
     - unconvert
+    - depguard
+  settings:
+    depguard:
+      rules:
+        # platform is shared infrastructure: it must never depend on business code.
+        platform-is-a-leaf:
+          files:
+            - "**/internal/platform/**"
+          deny:
+            - pkg: rental-management/internal/modules
+              desc: platform must not import business modules
+            - pkg: rental-management/internal/app
+              desc: platform must not import the wiring layer
+        # modules never import each other; they share only platform.
+        identity-is-isolated:
+          files:
+            - "**/internal/modules/identity/**"
+          deny:
+            - pkg: rental-management/internal/modules/location
+              desc: modules must not import other modules
+            - pkg: rental-management/internal/app
+              desc: modules must not import the wiring layer
+        location-is-isolated:
+          files:
+            - "**/internal/modules/location/**"
+          deny:
+            - pkg: rental-management/internal/modules/identity
+              desc: modules must not import other modules
+            - pkg: rental-management/internal/app
+              desc: modules must not import the wiring layer
   exclusions:
     presets:
       - std-error-handling

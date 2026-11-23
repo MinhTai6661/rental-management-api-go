@@ -80,28 +80,35 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 ## Layout and dependency rules
 
 ```
-cmd/rental-management/   the one binary: api | migrate [up|down|status] | seed [-demo]
-db/migrations/           goose migrations, embedded in the binary
-db/queries/<module>/     the SQL sqlc turns into Go (internal/<module>/sqlcgen, committed, never edited by hand)
-tools/fetchlocations/    one-off download of the provinces/wards snapshot (internal/location/data/locations.json.gz)
-internal/app/            wiring: builds the dependencies and the router, runs the server and the commands
-internal/config/         environment -> validated Config
-internal/httpx/          envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
-internal/apperr/         the error type services return + the error-code and validation-rule catalog
-internal/authz/          pure authorization rules: roles, active-role resolution, permissions, Principal
-internal/i18n/           vi/en messages and Accept-Language negotiation
-internal/db/             pgx pool, transactions, error helpers, goose runner
-internal/location/       provinces and wards (public, rate limited, cacheable)
-internal/identity/       accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
-internal/ratelimit/      fixed-window counters, in memory or in Redis
-internal/mail/           Mailer port: SMTP, log, test recorder; vi/en email templates
-internal/testdb/         throwaway Postgres/Redis containers + the guard for integration tests
-internal/logger/         slog setup
+cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]
+db/migrations/                goose migrations, embedded in the binary
+db/queries/<module>/          the SQL sqlc turns into Go (internal/modules/<module>/sqlcgen, committed, never edited by hand)
+tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/modules/location/data/locations.json.gz)
+
+internal/
+  app/                        wiring: builds the dependencies and the router, runs the server and the commands
+  modules/                    BUSINESS: one directory per feature, each with routes, handler, service, store, rules
+    identity/                 accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
+    location/                 provinces and wards (public, rate limited, cacheable)
+  platform/                   INFRASTRUCTURE shared by every module; no business rules
+    config/                   environment -> validated Config
+    httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
+    apperr/                   the error type services return + the error-code and validation-rule catalog
+    authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
+    i18n/                     vi/en messages and Accept-Language negotiation
+    db/                       pgx pool, transactions, error helpers, goose runner
+    ratelimit/                fixed-window counters, in memory or in Redis
+    mail/                     Mailer port: SMTP, log, test recorder; vi/en email templates
+    logger/                   slog setup
+    testdb/                   throwaway Postgres/Redis containers + the guard for integration tests
 ```
+
+Where does new code go? Business behaviour of a feature -> `internal/modules/<feature>/`. A technical tool several
+features share (HTTP, database, mail, i18n...) -> `internal/platform/`. Nothing else goes in `internal/`.
 
 Rules (checked in review and by the linters):
 
-- Direction: `handler -> service -> store / pure rules / ports`. Services and pure rules never see HTTP or gin.
+- Direction: `modules -> platform` only, never the reverse; a module never imports another module. Inside a module: `handler -> service -> store / pure rules / ports`. Services and pure rules never see HTTP or gin.
 - **gin is imported only** by `httpx`, `app` and the `handler.go` / `routes.go` files of a module.
 - All error-to-HTTP mapping happens in `httpx.Fail`; services return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
@@ -199,7 +206,7 @@ Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `
 
 - **Roles and permissions**: five roles (`super_admin`, `admin`, `landlord`, `manager`, `tenant`); a person holds
   several, but staff roles (`super_admin`, `admin`) are never mixed with the others (`authz.MixesStaffWithOthers`).
-  Register grants `tenant` only. The permission catalog is Go data (`internal/identity/catalog.go`), written to
+  Register grants `tenant` only. The permission catalog is Go data (`internal/modules/identity/catalog.go`), written to
   `roles`, `permissions`, `role_permissions` by `seed`. Permissions are `resource.action`; `resource.manage` covers
   every `resource.*`. A request acts in **one role** (the active role): its permissions are the only ones it has.
 - **Access token**: JWT HS256, 15 minutes, claims `iss, sub (user id), sid (session id), role, jti, iat, exp`.
@@ -225,7 +232,7 @@ Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `
 ## Testing
 
 - **Unit tests** (`make test`, part of `make check`): pure rules, config, i18n, JSON shapes. No Docker needed.
-- **Integration tests** (`make test-integration`, build tag `integration`): `internal/testdb` starts its own Postgres 18
+- **Integration tests** (`make test-integration`, build tag `integration`): `internal/platform/testdb` starts its own Postgres 18
   and Redis containers (label `rental-management.test=1`) through the Docker socket and clones a migrated template
   database per test. The suite covers migrations up/down/up, idempotent seeding, the location endpoints and the full
   auth flows (verify, login, refresh rotation and reuse, logout, role switch, password change, rate limits, Redis down).
@@ -255,13 +262,13 @@ Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
 2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `sqlcgen`).
-3. `internal/<module>/`: `store.go` (wraps `sqlcgen`), `service.go` (returns `apperr`), `handler.go` + `routes.go` (the
+3. `internal/modules/<module>/`: `store.go` (wraps `sqlcgen`), `service.go` (returns `apperr`), `handler.go` + `routes.go` (the
    only gin files), pure rules in small DB-free functions with table tests.
-4. New permissions: add them to `internal/identity/catalog.go` and the role matrix, then `make seed`.
+4. New permissions: add them to `internal/modules/identity/catalog.go` and the role matrix, then `make seed`.
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.
 7. Mount the module in `internal/app` and add its routes to the API table above.
-8. Tests: unit for the rules, integration (`//go:build integration`, `internal/testdb`) for the flows; run
+8. Tests: unit for the rules, integration (`//go:build integration`, `internal/platform/testdb`) for the flows; run
    `make check lint test-integration`.
 
 ## Roadmap
@@ -283,10 +290,10 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Statistics: `MonthRange`, `OccupancyCalculator`, `Ratio` | `internal/stats` |
 | Announcement: `AudienceCriteria`, `DayRange`, `PopupVisibility` | `internal/notification` |
 | Audit: `MoneyRedaction` | `internal/audit` |
-| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/identity` (social login) |
+| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/modules/identity` (social login) |
 | Invitation: `InvitationAudience` | `internal/invitation` |
 | Legal: `RichText` | `internal/legal` |
-| Support: `RoleAccess` | `internal/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
+| Support: `RoleAccess` | `internal/platform/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
 
 Route skeleton for later phases (all under `/v1`): landlord `/buildings`, `/buildings/{id}/rooms`, `/rooms/{id}`,
 `/listings`, `/contracts`, `/invoices`, `/invoices/{id}/payments`, `/payment-methods`, `/managers`; account

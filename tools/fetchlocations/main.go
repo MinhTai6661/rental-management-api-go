@@ -1,5 +1,5 @@
 // Command fetchlocations downloads the Vietnamese provinces and wards once and writes them, gzipped, to
-// internal/location/data/locations.json.gz. The file is committed and embedded in the binary, so seeding never
+// internal/modules/location/data/locations.json.gz. The file is committed and embedded in the binary, so seeding never
 // needs the network. Run it only when the administrative divisions change:
 //
 //	go run ./tools/fetchlocations
@@ -19,7 +19,7 @@ import (
 
 const sourceURL = "https://provinces.open-api.vn/api/v2"
 
-// province and ward mirror the snapshot format read by internal/location.
+// province and ward mirror the snapshot format read by internal/modules/location.
 type province struct {
 	Code                int    `json:"code"`
 	Name                string `json:"name"`
@@ -54,7 +54,7 @@ type sourceRow struct {
 }
 
 func main() {
-	out := flag.String("out", "internal/location/data/locations.json.gz", "output file")
+	out := flag.String("out", "internal/modules/location/data/locations.json.gz", "output file")
 	flag.Parse()
 	if err := run(*out); err != nil {
 		fmt.Fprintln(os.Stderr, "fetchlocations:", err)
