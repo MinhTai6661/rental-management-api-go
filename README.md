@@ -89,7 +89,7 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 ```
 cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]
 db/migrations/                goose migrations, embedded in the binary
-db/queries/<module>/          the SQL sqlc turns into Go (internal/modules/<module>/sqlcgen, committed, never edited by hand)
+db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/repository/sqlc, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/modules/location/data/locations.json.gz)
 
 config/                       environment -> validated Config
@@ -106,6 +106,7 @@ pkg/                          INFRASTRUCTURE shared by every module; no business
 
 internal/
   app/                        wiring: builds the dependencies and the router, runs the server and the commands
+  repository/sqlc/            the one generated sqlc package (all queries of db/queries)
   modules/                    BUSINESS: one directory per feature, each with routes, handler, service, store, rules
     identity/                 accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
     location/                 provinces and wards (public, rate limited, cacheable)
@@ -121,7 +122,7 @@ Rules (checked in review and by the linters):
 - **gin is imported only** by `httpx`, `app` and the `handler.go` / `routes.go` files of a module.
 - All error-to-HTTP mapping happens in `httpx.Fail`; services return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
-- A module never imports another module's `sqlcgen`.
+- There is only one generated query package, `internal/repository/sqlc` (query names are unique across all of `db/queries`).
 - Pure business rules (calculations, state machines) live in small, DB-free functions with table tests.
 
 ## API
@@ -381,7 +382,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 ## Makefile
 
 `make help` lists everything. Main targets: `check` (gofmt check + vet + unit tests), `lint`, `fmt`, `fmt-check`,
-`tidy`, `sqlc` (regenerate `internal/*/sqlcgen`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
+`tidy`, `sqlc` (regenerate `internal/repository/sqlc`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
 `logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `fetch-locations`, `dev`, `hooks`.
 
 ## Git workflow
@@ -398,8 +399,8 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 ## Adding a module
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
-2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `sqlcgen`).
-3. `internal/modules/<module>/`: `store.go` (wraps `sqlcgen`), `service.go` (returns `apperr`), `handler.go` + `routes.go` (the
+2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/repository/sqlc`).
+3. `internal/modules/<module>/`: `store.go` (wraps the generated `sqlc` package), `service.go` (returns `apperr`), `handler.go` + `routes.go` (the
    only gin files), pure rules in small DB-free functions with table tests.
 4. New permissions: add them to `internal/modules/identity/catalog.go` and the role matrix, then `make seed`.
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.

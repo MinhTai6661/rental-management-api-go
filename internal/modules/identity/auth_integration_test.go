@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"rental-management/internal/modules/identity/sqlcgen"
+	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/authz"
 	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"

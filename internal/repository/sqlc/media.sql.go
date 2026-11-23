@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: media.sql
 
-package sqlcgen
+package sqlc
 
 import (
 	"context"

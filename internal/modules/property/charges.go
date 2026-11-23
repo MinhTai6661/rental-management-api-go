@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/modules/property/sqlcgen"
+	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/apperr"
 )
 

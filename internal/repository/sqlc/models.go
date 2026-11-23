@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.30.0
 
-package sqlcgen
+package sqlc
 
 import (
 	"time"
@@ -25,4 +25,20 @@ type Medium struct {
 	DisplayOrder int16
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type Permission struct {
+	Code        string
+	Description string
+}
+
+type Role struct {
+	Code      string
+	Seniority int16
+	IsStaff   bool
+}
+
+type RolePermission struct {
+	RoleCode       string
+	PermissionCode string
 }

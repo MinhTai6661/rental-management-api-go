@@ -76,7 +76,7 @@ SELECT EXISTS (SELECT 1 FROM buildings WHERE landlord_id = @landlord_id);
 -- name: WardExists :one
 SELECT EXISTS (SELECT 1 FROM wards WHERE code = $1);
 
--- name: FirstWardCode :one
+-- name: PropertyFirstWardCode :one
 SELECT code FROM wards ORDER BY code LIMIT 1;
 
 -- name: CountRoomsFollowingPrice :one

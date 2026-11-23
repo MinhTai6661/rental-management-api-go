@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: identity.sql
 
-package sqlcgen
+package sqlc
 
 import (
 	"context"

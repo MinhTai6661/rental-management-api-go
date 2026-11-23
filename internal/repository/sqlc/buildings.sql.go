@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: buildings.sql
 
-package sqlcgen
+package sqlc
 
 import (
 	"context"
@@ -95,17 +95,6 @@ func (q *Queries) CountRoomsFollowingPrice(ctx context.Context, buildingID *uuid
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
-}
-
-const firstWardCode = `-- name: FirstWardCode :one
-SELECT code FROM wards ORDER BY code LIMIT 1
-`
-
-func (q *Queries) FirstWardCode(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, firstWardCode)
-	var code int32
-	err := row.Scan(&code)
-	return code, err
 }
 
 const getBuildingForUpdate = `-- name: GetBuildingForUpdate :one
@@ -273,6 +262,17 @@ func (q *Queries) MaxBuildingOrder(ctx context.Context, landlordID uuid.UUID) (i
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const propertyFirstWardCode = `-- name: PropertyFirstWardCode :one
+SELECT code FROM wards ORDER BY code LIMIT 1
+`
+
+func (q *Queries) PropertyFirstWardCode(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, propertyFirstWardCode)
+	var code int32
+	err := row.Scan(&code)
+	return code, err
 }
 
 const searchBuildings = `-- name: SearchBuildings :many

@@ -5,14 +5,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/modules/property/sqlcgen"
+	sqlcgen "rental-management/internal/repository/sqlc"
 )
 
 // SeedDemo gives the demo landlord a first building with default rent, area and charges and a few rooms: P101 to
 // P105 follow the building, P106 has its own rent, and A1 stands outside any building. It goes through the service,
 // so the rules apply, and it is safe to repeat: it only fills a building that has no rent yet and no rooms yet.
 func SeedDemo(ctx context.Context, svc *Service, landlordID uuid.UUID) error {
-	ward, err := svc.store.Queries().FirstWardCode(ctx)
+	ward, err := svc.store.Queries().PropertyFirstWardCode(ctx)
 	var wardCode *int32
 	if err == nil {
 		wardCode = &ward

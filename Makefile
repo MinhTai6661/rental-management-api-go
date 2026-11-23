@@ -49,7 +49,7 @@ lint: ## golangci-lint
 tidy: ## go mod tidy
 	$(GO) mod tidy
 
-sqlc: ## Generate the sqlc code (internal/*/sqlcgen) from db/migrations and db/queries
+sqlc: ## Generate the sqlc code (internal/repository/sqlc) from db/migrations and db/queries
 	$(DOCKER_RUN) $(SQLC_IMAGE) generate
 
 test-integration: ## Integration tests: throwaway Postgres/Redis containers started from inside Docker

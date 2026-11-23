@@ -1,57 +1,20 @@
 version: "2"
-# One generated package per module, so modules never share each other's query types.
+# One generated package (internal/repository/sqlc) for every query under db/queries.
 # The schema is the goose migrations (sqlc reads the Up part of each file).
 sql:
-  - &module
-    engine: postgresql
-    schema: db/migrations
-    queries: db/queries/location
-    gen:
-      go:
-        package: sqlcgen
-        out: internal/modules/location/sqlcgen
-        sql_package: pgx/v5
-        emit_pointers_for_null_types: true
-        omit_unused_structs: true
-        overrides: &overrides
-          - db_type: uuid
-            go_type: github.com/google/uuid.UUID
-          - db_type: uuid
-            nullable: true
-            go_type:
-              import: github.com/google/uuid
-              type: UUID
-              pointer: true
-          - db_type: timestamptz
-            go_type: time.Time
-          - db_type: timestamptz
-            nullable: true
-            go_type:
-              import: time
-              type: Time
-              pointer: true
   - engine: postgresql
     schema: db/migrations
-    queries: db/queries/identity
+    queries:
+      - db/queries/identity
+      - db/queries/location
+      - db/queries/property
     gen:
       go:
-        package: sqlcgen
-        out: internal/modules/identity/sqlcgen
+        package: sqlc
+        out: internal/repository/sqlc
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
         omit_unused_structs: true
-        overrides: *overrides
-  - engine: postgresql
-    schema: db/migrations
-    queries: db/queries/property
-    gen:
-      go:
-        package: sqlcgen
-        out: internal/modules/property/sqlcgen
-        sql_package: pgx/v5
-        emit_pointers_for_null_types: true
-        omit_unused_structs: true
-        # The shared overrides plus numeric as float64 (floor areas); YAML anchors cannot merge lists.
         overrides:
           - db_type: uuid
             go_type: github.com/google/uuid.UUID
@@ -69,6 +32,7 @@ sql:
               import: time
               type: Time
               pointer: true
+          # numeric as float64 (floor areas)
           - db_type: pg_catalog.numeric
             go_type: float64
           - db_type: pg_catalog.numeric

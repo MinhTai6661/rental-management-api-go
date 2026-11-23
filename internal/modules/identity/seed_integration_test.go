@@ -12,7 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/modules/identity/sqlcgen"
+	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/authz"
 	"rental-management/pkg/testdb"
 )

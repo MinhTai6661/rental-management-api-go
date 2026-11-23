@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"rental-management/internal/modules/property/sqlcgen"
+	sqlcgen "rental-management/internal/repository/sqlc"
 	"rental-management/pkg/apperr"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/storage"
