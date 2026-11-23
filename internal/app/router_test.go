@@ -12,10 +12,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/httpx"
-	"rental-management/internal/platform/i18n"
-	"rental-management/internal/platform/logger"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/httpx"
+	"rental-management/pkg/i18n"
+	"rental-management/pkg/logger"
 )
 
 type createItem struct {

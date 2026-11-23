@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 const (

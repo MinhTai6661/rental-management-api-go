@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"rental-management/internal/modules/property/sqlcgen"
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/db"
 )
 
 // BuildingInput is the body of a building: a full replacement of its fields. A nil Charges keeps the current ones,

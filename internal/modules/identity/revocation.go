@@ -7,7 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // Revocations remembers in Redis which access tokens and sessions were closed before their natural expiry

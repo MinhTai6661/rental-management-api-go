@@ -20,11 +20,11 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/httpx"
-	"rental-management/internal/platform/i18n"
-	"rental-management/internal/platform/mail"
-	"rental-management/internal/platform/ratelimit"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/httpx"
+	"rental-management/pkg/i18n"
+	"rental-management/pkg/mail"
+	"rental-management/pkg/ratelimit"
 )
 
 const (

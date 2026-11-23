@@ -3,7 +3,7 @@ package identity
 import (
 	"time"
 
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/authz"
 )
 
 // The rules below are pure: they decide from values and a time, so they are tested without a database.

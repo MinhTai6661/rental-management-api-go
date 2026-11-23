@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/ratelimit"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/ratelimit"
 )
 
 // Limiter is what the RateLimit middleware needs; the ratelimit package implements it.

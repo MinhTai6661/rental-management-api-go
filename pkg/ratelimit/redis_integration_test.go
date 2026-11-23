@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"rental-management/internal/platform/testdb"
+	"rental-management/pkg/testdb"
 )
 
 var rds *testdb.Redis

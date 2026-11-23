@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/authz"
 )
 
 // DemoAccount is an account `seed -demo` creates for development.

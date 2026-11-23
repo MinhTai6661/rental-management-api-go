@@ -13,8 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/testdb"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/testdb"
 )
 
 var (

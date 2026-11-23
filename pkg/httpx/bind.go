@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // maxBodyBytes caps a JSON request body.

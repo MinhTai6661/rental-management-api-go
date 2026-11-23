@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // room creates a room through the API and returns it.

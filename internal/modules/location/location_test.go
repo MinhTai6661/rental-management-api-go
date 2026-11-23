@@ -15,9 +15,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/httpx"
-	"rental-management/internal/platform/i18n"
-	"rental-management/internal/platform/ratelimit"
+	"rental-management/pkg/httpx"
+	"rental-management/pkg/i18n"
+	"rental-management/pkg/ratelimit"
 )
 
 func TestEmbeddedSnapshotIsUsable(t *testing.T) {

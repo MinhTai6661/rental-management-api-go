@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"rental-management/internal/platform/imaging"
-	"rental-management/internal/platform/storage"
+	"rental-management/pkg/imaging"
+	"rental-management/pkg/storage"
 )
 
 // Deps are the collaborators of the service. Nil ports get their no-op defaults.

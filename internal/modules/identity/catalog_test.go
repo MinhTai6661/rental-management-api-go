@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/authz"
 )
 
 // permissionCode is the same shape the database enforces with a CHECK constraint.

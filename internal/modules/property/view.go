@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"rental-management/internal/modules/property/sqlcgen"
-	"rental-management/internal/platform/storage"
+	"rental-management/pkg/storage"
 )
 
 // The JSON views of the API.

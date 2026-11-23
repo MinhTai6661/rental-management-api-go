@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/authz"
 )
 
 // UserView is the user as the API shows it.

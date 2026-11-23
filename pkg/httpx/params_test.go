@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // ctxWithQuery is a gin context for GET /?query.

@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/db"
-	"rental-management/internal/platform/mail"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/db"
+	"rental-management/pkg/mail"
 )
 
 // emailSendTimeout bounds one delivery to the SMTP server; sending happens after the request is answered.

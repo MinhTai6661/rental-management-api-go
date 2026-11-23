@@ -12,7 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/i18n"
+	"rental-management/pkg/i18n"
 )
 
 // Keys under which middleware stores request-scoped values in the gin context.

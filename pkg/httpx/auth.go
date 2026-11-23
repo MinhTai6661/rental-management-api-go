@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/authz"
 )
 
 const principalKey = "httpx.principal"

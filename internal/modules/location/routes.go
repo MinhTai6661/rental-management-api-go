@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/httpx"
+	"rental-management/pkg/httpx"
 )
 
 // Default rate limit of the public location routes, per client address.

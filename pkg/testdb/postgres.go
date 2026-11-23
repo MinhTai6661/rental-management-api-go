@@ -16,7 +16,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/db"
 )
 
 // Postgres is a throwaway Postgres container with a migrated template database. Each test clones the template

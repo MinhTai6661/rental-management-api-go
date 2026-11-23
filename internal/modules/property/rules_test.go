@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 func ptr[T any](v T) *T { return &v }

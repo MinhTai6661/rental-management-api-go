@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"rental-management/internal/modules/property/sqlcgen"
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/imaging"
-	"rental-management/internal/platform/storage"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/imaging"
+	"rental-management/pkg/storage"
 )
 
 // mediaPrefix is the start of every key this module stores; the public route serves nothing else.

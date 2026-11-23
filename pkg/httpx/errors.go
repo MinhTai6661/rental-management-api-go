@@ -8,9 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/db"
-	"rental-management/internal/platform/i18n"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/db"
+	"rental-management/pkg/i18n"
 )
 
 type (

@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/httpx"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/httpx"
 )
 
 // Request bodies. The validate tags are the rules of the API; errors are reported under the json names.

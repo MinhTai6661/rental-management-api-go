@@ -9,13 +9,13 @@ import (
 	"os"
 	"time"
 
+	"rental-management/config"
 	"rental-management/internal/modules/identity"
 	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
-	"rental-management/internal/platform/config"
-	"rental-management/internal/platform/db"
-	"rental-management/internal/platform/logger"
-	"rental-management/internal/platform/storage"
+	"rental-management/pkg/db"
+	"rental-management/pkg/logger"
+	"rental-management/pkg/storage"
 )
 
 // RunMigrate runs `rental-management migrate [up|down|status]` (up by default).

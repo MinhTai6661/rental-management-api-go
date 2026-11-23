@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/db"
 )
 
 // Seed makes the roles, permissions and role_permissions tables match the catalog: it adds what is missing,

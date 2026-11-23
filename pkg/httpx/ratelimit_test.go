@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/ratelimit"
+	"rental-management/pkg/ratelimit"
 )
 
 // fakeLimiter answers every request with the same canned result.

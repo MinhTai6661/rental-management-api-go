@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/db"
-	"rental-management/internal/platform/httpx"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/db"
+	"rental-management/pkg/httpx"
 )
 
 // cacheControl lets browsers and proxies keep an answer for a day: the divisions change a few times a year at most.

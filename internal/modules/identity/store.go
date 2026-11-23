@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/internal/modules/identity/sqlcgen"
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/db"
 )
 
 // Store gives the service its queries, plain or inside one transaction.

@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/internal/modules/location/sqlcgen"
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/db"
 )
 
 // Item is a province or a ward as the API lists it.

@@ -92,31 +92,32 @@ db/migrations/                goose migrations, embedded in the binary
 db/queries/<module>/          the SQL sqlc turns into Go (internal/modules/<module>/sqlcgen, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/modules/location/data/locations.json.gz)
 
+config/                       environment -> validated Config
+pkg/                          INFRASTRUCTURE shared by every module; no business rules
+  httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
+  apperr/                   the error type services return + the error-code and validation-rule catalog
+  authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
+  i18n/                     vi/en messages (go-i18n, embedded JSON) and Accept-Language negotiation (x/text/language)
+  db/                       pgx pool, transactions, error helpers, goose runner
+  ratelimit/                per-client limits on Redis (redis_rate, GCRA); the Limiter interface the middleware uses
+  mail/                     Mailer port: SMTP (go-mail), log, test recorder; vi/en email templates
+  logger/                   slog setup
+  testdb/                   throwaway Postgres/Redis containers + the guard for integration tests
+
 internal/
   app/                        wiring: builds the dependencies and the router, runs the server and the commands
   modules/                    BUSINESS: one directory per feature, each with routes, handler, service, store, rules
     identity/                 accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
     location/                 provinces and wards (public, rate limited, cacheable)
     property/                 buildings, rooms, charges and pictures (upload, cover, arrangement, public serving); one module because a building edit reaches its rooms in one transaction
-  platform/                   INFRASTRUCTURE shared by every module; no business rules
-    config/                   environment -> validated Config
-    httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
-    apperr/                   the error type services return + the error-code and validation-rule catalog
-    authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
-    i18n/                     vi/en messages (go-i18n, embedded JSON) and Accept-Language negotiation (x/text/language)
-    db/                       pgx pool, transactions, error helpers, goose runner
-    ratelimit/                per-client limits on Redis (redis_rate, GCRA); the Limiter interface the middleware uses
-    mail/                     Mailer port: SMTP (go-mail), log, test recorder; vi/en email templates
-    logger/                   slog setup
-    testdb/                   throwaway Postgres/Redis containers + the guard for integration tests
 ```
 
 Where does new code go? Business behaviour of a feature -> `internal/modules/<feature>/`. A technical tool several
-features share (HTTP, database, mail, i18n...) -> `internal/platform/`. Nothing else goes in `internal/`.
+features share (HTTP, database, mail, i18n...) -> `pkg/` (settings -> `config/`). Nothing else goes in `internal/`.
 
 Rules (checked in review and by the linters):
 
-- Direction: `modules -> platform` only, never the reverse; a module never imports another module. Inside a module: `handler -> service -> store / pure rules / ports`. Services and pure rules never see HTTP or gin.
+- Direction: `modules -> pkg, config` only, never the reverse; a module never imports another module. Inside a module: `handler -> service -> store / pure rules / ports`. Services and pure rules never see HTTP or gin.
 - **gin is imported only** by `httpx`, `app` and the `handler.go` / `routes.go` files of a module.
 - All error-to-HTTP mapping happens in `httpx.Fail`; services return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
@@ -368,7 +369,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 ## Testing
 
 - **Unit tests** (`make test`, part of `make check`): pure rules, config, i18n, JSON shapes. No Docker needed.
-- **Integration tests** (`make test-integration`, build tag `integration`): `internal/platform/testdb` starts its own Postgres 18
+- **Integration tests** (`make test-integration`, build tag `integration`): `pkg/testdb` starts its own Postgres 18
   and Redis containers (label `rental-management.test=1`) through the Docker socket and clones a migrated template
   database per test. The suite covers migrations up/down/up, idempotent seeding, the location endpoints and the full
   auth flows (verify, login, refresh rotation and reuse, logout, role switch, password change, rate limits, Redis down).
@@ -404,7 +405,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.
 7. Mount the module in `internal/app` and add its routes to the API table above.
-8. Tests: unit for the rules, integration (`//go:build integration`, `internal/platform/testdb`) for the flows; run
+8. Tests: unit for the rules, integration (`//go:build integration`, `pkg/testdb`) for the flows; run
    `make check lint test-integration`.
 
 ## Roadmap
@@ -433,7 +434,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/modules/identity` (social login) |
 | Invitation: `InvitationAudience` | `internal/invitation` |
 | Legal: `RichText` | `internal/legal` |
-| Support: `RoleAccess` | `internal/platform/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
+| Support: `RoleAccess` | `pkg/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
 
 Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/rooms`, `/rooms/{id}`,
 `/listings`, `/contracts`, `/invoices`, `/invoices/{id}/payments`, `/payment-methods`, `/managers`; account

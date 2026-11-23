@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"rental-management/internal/platform/authz"
+	"rental-management/pkg/authz"
 )
 
 // Permission is one thing a role may be allowed to do. Codes are "<resource>.<action>"; "<resource>.manage"

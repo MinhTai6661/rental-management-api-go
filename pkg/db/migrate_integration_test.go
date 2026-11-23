@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"rental-management/internal/platform/db"
-	"rental-management/internal/platform/testdb"
+	"rental-management/pkg/db"
+	"rental-management/pkg/testdb"
 )
 
 var pg *testdb.Postgres

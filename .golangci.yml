@@ -17,16 +17,17 @@ linters:
   settings:
     depguard:
       rules:
-        # platform is shared infrastructure: it must never depend on business code.
-        platform-is-a-leaf:
+        # pkg and config are shared infrastructure: it must never depend on business code.
+        shared-code-is-a-leaf:
           files:
-            - "**/internal/platform/**"
+            - "**/pkg/**"
+            - "**/config/**"
           deny:
             - pkg: rental-management/internal/modules
-              desc: platform must not import business modules
+              desc: shared code must not import business modules
             - pkg: rental-management/internal/app
-              desc: platform must not import the wiring layer
-        # modules never import each other; they share only platform.
+              desc: shared code must not import the wiring layer
+        # modules never import each other; they share only pkg and config.
         identity-is-isolated:
           files:
             - "**/internal/modules/identity/**"

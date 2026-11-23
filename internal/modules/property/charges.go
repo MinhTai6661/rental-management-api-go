@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"rental-management/internal/modules/property/sqlcgen"
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // normalizeCharges trims the text of a charge list and reports blank names as "charges.<i>.name required".

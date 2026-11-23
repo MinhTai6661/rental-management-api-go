@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/i18n"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/i18n"
 )
 
 const requestIDHeader = "X-Request-Id"

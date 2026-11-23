@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"rental-management/internal/modules/property/sqlcgen"
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/db"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/db"
 )
 
 // RoomInput is the body of a room: a full replacement of its fields. An absent value (nil) means the room has none

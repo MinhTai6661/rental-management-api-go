@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 // This file holds the business rules of buildings, rooms, charges and pictures as small functions on plain data:

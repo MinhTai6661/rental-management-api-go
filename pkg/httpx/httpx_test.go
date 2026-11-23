@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"rental-management/internal/platform/apperr"
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/i18n"
+	"rental-management/pkg/apperr"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/i18n"
 )
 
 // testEngine is an engine with the locale middleware and the given routes.

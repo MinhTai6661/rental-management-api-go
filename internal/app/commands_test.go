@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"rental-management/internal/platform/config"
+	"rental-management/config"
 )
 
 func TestSeedDemoIsRefusedInProductionAndWithoutAPassword(t *testing.T) {

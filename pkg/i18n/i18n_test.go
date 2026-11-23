@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 func TestNegotiate(t *testing.T) {

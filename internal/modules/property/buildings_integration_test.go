@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rental-management/internal/platform/apperr"
+	"rental-management/pkg/apperr"
 )
 
 func charge(name, kind string, amount int64, unit string) map[string]any {

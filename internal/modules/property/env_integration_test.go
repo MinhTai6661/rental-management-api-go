@@ -19,13 +19,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rental-management/internal/platform/authz"
-	"rental-management/internal/platform/httpx"
-	"rental-management/internal/platform/i18n"
-	"rental-management/internal/platform/imaging"
-	"rental-management/internal/platform/ratelimit"
-	"rental-management/internal/platform/storage"
-	"rental-management/internal/platform/testdb"
+	"rental-management/pkg/authz"
+	"rental-management/pkg/httpx"
+	"rental-management/pkg/i18n"
+	"rental-management/pkg/imaging"
+	"rental-management/pkg/ratelimit"
+	"rental-management/pkg/storage"
+	"rental-management/pkg/testdb"
 )
 
 var pg *testdb.Postgres
