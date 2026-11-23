@@ -12,10 +12,11 @@ import (
 	"rental-management/config"
 	"rental-management/internal/adapter/persistence/postgres"
 	"rental-management/internal/adapter/security"
+	"rental-management/internal/adapter/snapshot/locationdata"
 	domain "rental-management/internal/domain/identity"
-	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
 	usecase "rental-management/internal/usecase/identity"
+	locationuc "rental-management/internal/usecase/location"
 	"rental-management/pkg/db"
 	"rental-management/pkg/logger"
 	"rental-management/pkg/storage"
@@ -64,13 +65,15 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	defer pool.Close()
 
+	tx := postgres.NewTxManager(pool)
 	users := postgres.NewUserRepository(pool)
-	seeder := usecase.NewSeeder(postgres.NewTxManager(pool), postgres.NewPermissionRepository(pool), users, security.PasswordHasher{})
+	seeder := usecase.NewSeeder(tx, postgres.NewPermissionRepository(pool), users, security.PasswordHasher{})
+	locations := locationuc.NewSeeder(tx, postgres.NewLocationRepository(pool), locationdata.Source{})
 	if err := seeder.SeedCatalog(ctx); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(out, "seeded roles and permissions")
-	if err := location.Seed(ctx, pool); err != nil {
+	if err := locations.Seed(ctx); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintln(out, "seeded provinces and wards")

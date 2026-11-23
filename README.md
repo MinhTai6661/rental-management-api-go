@@ -90,7 +90,7 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]
 db/migrations/                goose migrations, embedded in the binary
 db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/adapter/persistence/postgres/sqlc, committed, never edited by hand)
-tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/modules/location/data/locations.json.gz)
+tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/adapter/snapshot/locationdata/locations.json.gz)
 
 config/                       environment -> validated Config
 pkg/                          INFRASTRUCTURE shared by every module; no business rules
@@ -107,9 +107,11 @@ pkg/                          INFRASTRUCTURE shared by every module; no business
 internal/
   domain/<context>/           enterprise rules: entities, enums, pure rules, typed errors; stdlib + uuid + pkg/authz only, no struct tags
     identity/                 accounts, sessions, tokens, role/permission catalog, refresh/verification/role rules
+    location/                 provinces and wards, the seed snapshot and its validation, ErrProvinceNotFound
     shared/                   errors every context uses: ErrNotFound, ConstraintError, ErrUnavailable
   usecase/<context>/          application rules: one file per use case, ports (interfaces) in ports.go, input/output structs without tags
     identity/                 Auth (register, login, refresh, logout, switch role, change password, me, authenticate, verify/resend email), Seeder
+    location/                 Locations (list provinces, wards of a province), Seeder (load the snapshot)
   adapter/                    everything that talks to the outside world; implements the ports declared by the use cases
     http/                     (package httpadapter) gin handlers, routes, request/response bodies, domain error -> apperr mapping
     persistence/postgres/     (package postgres) TxManager, repositories, row <-> domain mapping, error translation
@@ -117,17 +119,20 @@ internal/
     redis/                    (package redisstore) the revoked tokens and sessions store
     security/                 argon2id password hasher, JWT access tokens, opaque random tokens
     mail/                     (package mailadapter) the verification email on top of pkg/mail
+    snapshot/locationdata/    the provinces/wards snapshot embedded in the binary (locations.json.gz) and its decoder
   app/                        wiring: the only place that knows every layer; builds the dependencies and the router, runs the server and the commands
   modules/                    features not moved to the layers yet (a feature directory has its own routes, handler, service, store)
-    location/                 provinces and wards (public, rate limited, cacheable)
     property/                 buildings, rooms, charges and pictures (upload, cover, arrangement, public serving); one module because a building edit reaches its rooms in one transaction
 ```
 
 Identity (accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed) is the first
 context moved to the clean architecture and is the template: `domain/identity/`, `usecase/identity/` (`ports.go`,
 `register.go`, `login.go`, ...), `adapter/http/auth_*.go`, `adapter/persistence/postgres/*_repository.go`,
-`adapter/redis/`, `adapter/security/`, `adapter/mail/`. `location` and `property` still live in `internal/modules`
-until their step; they only use `pkg`, `config` and the generated sqlc package.
+`adapter/redis/`, `adapter/security/`, `adapter/mail/`. Location (provinces and wards, public and rate limited,
+cacheable; read-mostly, so thin) follows it: `domain/location/`, `usecase/location/` (`Locations` to list, `Seeder`
+to load the snapshot), `adapter/http/location_*.go`, `adapter/persistence/postgres/location_repository.go` and
+`adapter/snapshot/locationdata/` (the embedded snapshot behind the `SnapshotSource` port). `property` is the only
+feature still in `internal/modules`; it only uses `pkg`, `config` and the generated sqlc package.
 
 Where does new code go? Business behaviour -> the layers above. A technical tool several features share (HTTP,
 database, mail, i18n...) -> `pkg/` (settings -> `config/`). Nothing else goes in `internal/`.
@@ -140,12 +145,12 @@ Rules (checked in review and by the linters, see `.golangci.yml`):
 - **adapter/persistence** and **adapter/redis** return domain types, never sqlc rows, and translate driver errors: no rows -> `shared.ErrNotFound`, unique / foreign key violations -> `*shared.ConstraintError` (`shared.IsUnique`, `shared.IsForeignKey`), an unreachable Redis -> an error wrapping `shared.ErrUnavailable`.
 - **adapter/http** is the only identity code that imports gin; it maps domain errors to `apperr` values (same codes and fields as before) and builds the response bodies. It never imports the persistence or Redis adapters (its integration tests do, to wire the real stack).
 - **Transactions travel in the context**: a use case calls `tx.WithinTx(ctx, func(ctx) error {...})` and every repository call made with that ctx joins the transaction (`postgres.TxManager`, `queries(ctx, pool)`).
-- **gin is imported only** by `pkg/httpx`, `app` and `adapter/http` (and the modules still in `internal/modules`).
+- **gin is imported only** by `pkg/httpx`, `app` and `adapter/http` (and `internal/modules/property`).
 - All error-to-HTTP mapping happens in `adapter/http` and `httpx.Fail`; modules not yet migrated return `apperr` values (a kind, a stable code, params).
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
 - There is only one generated query package, `internal/adapter/persistence/postgres/sqlc` (query names are unique across all of `db/queries`).
 - Pure business rules (calculations, state machines) live in small, DB-free functions with table tests in `domain`; use cases are tested with hand-written fakes of their ports (no database).
-- Feature modules still in `internal/modules` never import each other or the new layers (except the generated sqlc package).
+- Feature modules still in `internal/modules` (property) never import the new layers (except the generated sqlc package).
 
 ## API
 
@@ -422,7 +427,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
 2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/adapter/persistence/postgres/sqlc`).
-3. One slice per layer, named after the feature (see identity): `internal/domain/<context>/` (entities, pure rules with table tests, typed errors), `internal/usecase/<context>/` (`ports.go` + one file per use case), `internal/adapter/http/` (handlers, routes, bodies, error mapping), `internal/adapter/persistence/postgres/` (repositories) and any other adapter the ports need. (location and property still use `internal/modules/<module>/` until they are moved.)
+3. One slice per layer, named after the feature (see identity): `internal/domain/<context>/` (entities, pure rules with table tests, typed errors), `internal/usecase/<context>/` (`ports.go` + one file per use case), `internal/adapter/http/` (handlers, routes, bodies, error mapping), `internal/adapter/persistence/postgres/` (repositories) and any other adapter the ports need. (property still uses `internal/modules/<module>/` until it is moved.)
 4. New permissions: add them to `internal/domain/identity/catalog.go` and the role matrix, then `make seed`.
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.

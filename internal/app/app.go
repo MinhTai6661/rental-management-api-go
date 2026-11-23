@@ -23,9 +23,9 @@ import (
 	"rental-management/internal/adapter/persistence/postgres"
 	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/adapter/security"
-	"rental-management/internal/modules/location"
 	"rental-management/internal/modules/property"
 	usecase "rental-management/internal/usecase/identity"
+	locationuc "rental-management/internal/usecase/location"
 	"rental-management/pkg/db"
 	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
@@ -79,6 +79,7 @@ func RunAPI(ctx context.Context) error {
 		return err
 	}
 	authenticator := httpadapter.NewAuthenticator(auth)
+	locations := locationuc.NewLocations(postgres.NewLocationRepository(pool))
 
 	files, err := storage.NewLocalDisk(cfg.MediaDir, cfg.MediaPublicBaseURL)
 	if err != nil {
@@ -95,9 +96,10 @@ func RunAPI(ctx context.Context) error {
 			CORSOrigins:    cfg.CORSAllowedOrigins,
 			Ready:          ready,
 			Modules: []func(*gin.RouterGroup){
-				location.Mount(location.NewStore(pool), location.Options{
-					Limiter: limiter, Limit: location.DefaultLimit, Window: location.DefaultWindow,
-				}),
+				func(v1 *gin.RouterGroup) {
+					httpadapter.MountLocations(v1, httpadapter.NewLocationHandler(locations), limiter,
+						httpadapter.LocationDefaultLimit, httpadapter.LocationDefaultWindow)
+				},
 				func(v1 *gin.RouterGroup) {
 					httpadapter.MountAuth(v1, httpadapter.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
 				},
