@@ -1,0 +1,7 @@
+Xin chào {{.FullName}},
+
+Cảm ơn bạn đã đăng ký. Vui lòng mở liên kết dưới đây để xác nhận địa chỉ email của bạn:
+
+{{.URL}}
+
+Liên kết có hiệu lực trong {{.Hours}} giờ. Nếu bạn không tạo tài khoản, hãy bỏ qua email này.

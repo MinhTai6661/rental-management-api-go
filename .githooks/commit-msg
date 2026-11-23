@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Conventional Commits: `type(scope): subject`, at most 72 characters after the colon, `!` marks a breaking change.
+# The message must not carry the attribution lines (Co-Authored-By, "Generated with ...").
+set -eu
+
+file="${1:?usage: commit-msg <message-file>}"
+
+# Drop comment lines (git's template) and blank lines; the first one left is the subject.
+message="$(grep -v '^#' "$file" || true)"
+subject="$(printf '%s\n' "$message" | grep -m1 -v '^[[:space:]]*$' || true)"
+
+if printf '%s\n' "$message" | grep -Eiq 'co-authored-by|generated with'; then
+  echo "commit-msg: remove the Co-Authored-By / 'Generated with ...' lines; only the author appears in the history." >&2
+  exit 1
+fi
+
+# Messages git writes itself.
+case "$subject" in
+  "Merge "* | "Revert \""* | "fixup! "* | "squash! "*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|refactor|perf|test|docs|style|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .{1,72}$'
+if ! printf '%s\n' "$subject" | grep -Eq "$pattern"; then
+  cat >&2 <<MSG
+commit-msg: the subject does not follow Conventional Commits:
+  $subject
+Expected: type(scope): subject   (subject up to 72 characters)
+Types: feat fix refactor perf test docs style build ci chore revert (add ! for a breaking change)
+Example: feat(auth): add logout-all endpoint
+MSG
+  exit 1
+fi

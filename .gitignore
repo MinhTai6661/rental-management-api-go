@@ -1,0 +1,9 @@
+# Build output and local files
+/bin/
+/tmp/
+.env
+.env.*
+!.env.example
+*.test
+*.out
+.DS_Store

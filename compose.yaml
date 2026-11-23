@@ -1,0 +1,109 @@
+# Development stack of the Go backend: the API with live reload, its own Postgres and Redis, and Mailpit.
+# It shares nothing with the Laravel stack (myrent_*), so every host port here differs from that one:
+#   api 8090, postgres 5442, redis 6389, mailpit SMTP 1026 and UI 8026.
+# No image is built: the API runs from the official golang image with the source mounted.
+# No .env file is needed, the defaults below are for development only.
+name: rental-management
+
+services:
+  api:
+    image: golang:1.26.11
+    container_name: rental_management_api
+    working_dir: /src
+    # air rebuilds and restarts the binary when a .go file changes (see .air.toml).
+    command: ["go", "run", "github.com/air-verse/air@v1.62.0", "-c", ".air.toml"]
+    ports:
+      - "${API_PORT:-8090}:8080"
+    environment:
+      APP_ENV: local
+      LOG_FORMAT: text
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://rental_management:rental_management@postgres:5432/rental_management_dev?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
+      # Password of the demo accounts `make seed-demo` creates. Development only.
+      SEED_DEMO_PASSWORD: demo-password-123
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      WEB_URL: http://localhost:2001
+      CORS_ALLOWED_ORIGINS: http://localhost:2001
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/src
+      - rental-management-go-mod:/go/pkg/mod
+      - rental-management-go-build:/root/.cache/go-build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rental_management_network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: rental_management_postgres
+    environment:
+      POSTGRES_DB: rental_management_dev
+      POSTGRES_USER: rental_management
+      POSTGRES_PASSWORD: rental_management
+    ports:
+      - "${POSTGRES_PORT:-5442}:5432"
+    volumes:
+      # Postgres 18 images keep the data in a version folder below /var/lib/postgresql.
+      - rental-management-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rental_management -d rental_management_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - rental_management_network
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: rental_management_redis
+    ports:
+      - "${REDIS_PORT:-6389}:6379"
+    volumes:
+      - rental-management-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rental_management_network
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: rental_management_mailpit
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1026}:1025"
+      - "${MAILPIT_UI_PORT:-8026}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - rental_management_network
+    restart: unless-stopped
+
+networks:
+  rental_management_network:
+    name: rental_management_network
+
+volumes:
+  rental-management-pg:
+  rental-management-redis:
+  # The Go caches are the same volumes the Makefile uses, so compilation is shared.
+  rental-management-go-mod:
+    name: rental-management-go-mod
+  rental-management-go-build:
+    name: rental-management-go-build

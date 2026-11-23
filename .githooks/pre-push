@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Blocks a push when the code is not formatted, does not vet, does not lint or its tests fail. Everything runs in
+# Docker through the Makefile, so nothing has to be installed.
+#   SKIP_INTEGRATION=1 git push   skips the integration tests (they start throwaway Postgres/Redis containers).
+# Without SKIP_INTEGRATION the integration tests run only when the Docker socket is reachable.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: gofmt, go vet, golangci-lint, unit tests"
+make fmt-check vet lint test
+
+if [ "${SKIP_INTEGRATION:-0}" = "1" ]; then
+  echo "pre-push: integration tests skipped (SKIP_INTEGRATION=1)"
+elif docker info >/dev/null 2>&1; then
+  echo "pre-push: integration tests"
+  make test-integration
+else
+  echo "pre-push: Docker is not reachable, integration tests skipped" >&2
+fi

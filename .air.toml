@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/rental-management ./cmd/rental-management"
+  bin = "./tmp/rental-management"
+  args_bin = ["api"]
+  # sql and gz files are embedded in the binary (migrations, locations snapshot).
+  include_ext = ["go", "json", "sql", "gz", "txt", "html"]
+  exclude_dir = ["tmp", "bin", ".git"]
+  exclude_regex = ["_test\\.go$"]
+  delay = 300

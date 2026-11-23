@@ -1,0 +1,27 @@
+version: "2"
+
+run:
+  # Lint the integration tests too.
+  build-tags:
+    - integration
+
+linters:
+  default: standard
+  enable:
+    - gosec
+    - errorlint
+    - bodyclose
+    - misspell
+    - unconvert
+  exclusions:
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - rental-management

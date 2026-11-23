@@ -1,0 +1,17 @@
+# Keep the build context small and free of local files and secrets.
+.git
+.github
+.githooks
+.idea
+.vscode
+bin
+tmp
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+compose.yaml
+*.md
+*.test
+*.out
