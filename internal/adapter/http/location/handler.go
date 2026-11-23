@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/httpx"
 	domain "rental-management/internal/domain/location"
 	usecase "rental-management/internal/usecase/location"
-	"rental-management/pkg/httpx"
 )
 
 // locationCacheControl lets browsers and proxies keep an answer for a day: the divisions change a few times a

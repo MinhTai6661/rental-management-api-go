@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-management/internal/adapter/http/apperr"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/apperr"
 )
 
 func charge(name, kind string, amount int64, unit string) map[string]any {

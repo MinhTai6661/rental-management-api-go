@@ -9,10 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	httpadapter "rental-management/internal/adapter/http"
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	domain "rental-management/internal/domain/identity"
 	usecase "rental-management/internal/usecase/identity"
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
 )
 
 // AuthHandler serves the auth routes: it binds the request, calls the use case and writes the answer.

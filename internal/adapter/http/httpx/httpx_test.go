@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 	"rental-management/pkg/authz"
 	"rental-management/pkg/i18n"
 )

@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
 )
 
 // BuildingHandler serves the building routes: it binds the request, calls the use case and writes the answer.

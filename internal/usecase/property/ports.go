@@ -160,7 +160,7 @@ type ImageProcessor interface {
 }
 
 // Ports to what later phases own. Each has a default that changes nothing, so the context works on its own and a
-// later one is wired in internal/app without touching this one.
+// later one is wired in cmd/rental-management without touching this one.
 
 // PlanLimits says how much a landlord's plan allows; nil means unlimited. The plan context implements it.
 type PlanLimits interface {

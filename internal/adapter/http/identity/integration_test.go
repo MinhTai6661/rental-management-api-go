@@ -23,6 +23,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	httpadapter "rental-management/internal/adapter/http"
+	"rental-management/internal/adapter/http/httpx"
 	identityhttp "rental-management/internal/adapter/http/identity"
 	mailadapter "rental-management/internal/adapter/mail"
 	"rental-management/internal/adapter/persistence/postgres"
@@ -31,7 +32,6 @@ import (
 	"rental-management/internal/adapter/security"
 	usecase "rental-management/internal/usecase/identity"
 	"rental-management/pkg/authz"
-	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/mail"
 	"rental-management/pkg/ratelimit"

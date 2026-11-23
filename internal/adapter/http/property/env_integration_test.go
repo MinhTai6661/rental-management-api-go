@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/internal/adapter/filestore"
+	"rental-management/internal/adapter/http/httpx"
 	propertyhttp "rental-management/internal/adapter/http/property"
 	"rental-management/internal/adapter/imageproc"
 	"rental-management/internal/adapter/persistence/postgres"
@@ -26,7 +27,6 @@ import (
 	domain "rental-management/internal/domain/property"
 	usecase "rental-management/internal/usecase/property"
 	"rental-management/pkg/authz"
-	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/ratelimit"

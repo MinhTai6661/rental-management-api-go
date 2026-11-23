@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 	"rental-management/pkg/i18n"
 )
 

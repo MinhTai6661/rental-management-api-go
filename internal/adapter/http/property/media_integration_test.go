@@ -22,8 +22,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-management/internal/adapter/http/apperr"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/apperr"
 )
 
 // ---- fixtures ----

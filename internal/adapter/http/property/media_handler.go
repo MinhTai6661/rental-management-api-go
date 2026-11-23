@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/httpx"
 	domain "rental-management/internal/domain/property"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/httpx"
 )
 
 // MediaHandler serves the picture routes of rooms and buildings and the public picture route.

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"rental-management/internal/adapter/http/apperr"
 	domain "rental-management/internal/domain/property"
-	"rental-management/pkg/apperr"
 )
 
 // mapPropertyError turns the errors of the property use cases into the API's errors. Anything it does not know is

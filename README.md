@@ -87,15 +87,13 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 ## Layout and dependency rules
 
 ```
-cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]
+cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo]; also the composition root (api.go builds the dependencies, router.go the router, commands.go migrate/seed): the only place that knows every layer
 db/migrations/                goose migrations, embedded in the binary
 db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/adapter/persistence/postgres/sqlc, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/adapter/snapshot/locationdata/locations.json.gz)
 
 config/                       environment -> validated Config
 pkg/                          INFRASTRUCTURE shared by every module; no business rules
-  httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
-  apperr/                   the error type services return + the error-code and validation-rule catalog
   authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
   i18n/                     vi/en messages (go-i18n, embedded JSON) and Accept-Language negotiation (x/text/language)
   db/                       pgx pool, transactions, error helpers, goose runner
@@ -116,6 +114,8 @@ internal/
     property/                 Buildings, Rooms, Media (one file per use case or small group; a building edit reaches its rooms in one transaction), Seeder (demo data); ports: repositories, FileStore, ImageProcessor, PlanLimits, RoomGuards, RoomObserver
   adapter/                    everything that talks to the outside world; implements the ports declared by the use cases
     http/                     (package httpadapter) what the HTTP features share: the Authenticator (+ identity error mapping) and views used by several features; never imports a feature folder
+      httpx/                  envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware; a leaf (imports only pkg and apperr)
+      apperr/                 the error type the handlers return + the error-code and validation-rule catalog; a leaf (imports nothing)
       identity/               (package identityhttp) auth handlers, routes, request/response bodies
       location/               (package locationhttp) public province and ward routes
       property/               (package propertyhttp) building, room and media handlers, routes, bodies, domain error -> apperr mapping, ETags
@@ -131,7 +131,6 @@ internal/
     snapshot/locationdata/    the provinces/wards snapshot embedded in the binary (locations.json.gz) and its decoder
     filestore/                the picture FileStore port on top of pkg/storage (local disk or memory)
     imageproc/                the ImageProcessor port on top of pkg/imaging
-  app/                        wiring: the only place that knows every layer; builds the dependencies and the router, runs the server and the commands
 ```
 
 Identity (accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed) is the first
@@ -146,19 +145,19 @@ typed errors), `usecase/property/` (`Buildings`, `Rooms`, `Media`, `Seeder`), `a
 `adapter/persistence/postgres/property/`, `adapter/filestore/`
 and `adapter/imageproc/`.
 
-Where does new code go? Business behaviour -> the layers above. A technical tool several features share (HTTP,
-database, mail, i18n...) -> `pkg/` (settings -> `config/`). Nothing else goes in `internal/`.
+Where does new code go? Business behaviour -> the layers above. A technical tool several features share (database,
+mail, i18n...) -> `pkg/` (settings -> `config/`); HTTP-only helpers -> `adapter/http/httpx`. Nothing else goes in `internal/`.
 
 Rules (checked in review and by the linters, see `.golangci.yml`):
 
-- Direction: `adapter -> usecase -> domain`. Infrastructure is reached only through the interfaces the use case layer declares (`usecase/<context>/ports.go`); `app` wires them. Everything may use `pkg` and `config`, never the reverse.
+- Direction: `adapter -> usecase -> domain`. Infrastructure is reached only through the interfaces the use case layer declares (`usecase/<context>/ports.go`); `cmd/rental-management` wires them. Everything may use `pkg` and `config`, never the reverse. Only `cmd/rental-management` (the composition root) imports every layer.
 - **domain** imports the standard library, uuid and `pkg/authz` only: no struct tags, gin, pgx, redis, JWT, argon2, `apperr`. It returns typed errors (`identity.ErrEmailTaken`, ...), never HTTP ones.
 - **usecase** imports `domain` (and stdlib, uuid, `pkg/authz`), never an adapter, gin, pgx, go-redis, the JWT library or `apperr`. Ports take domain types or plain values, so an adapter implements them without importing the use case package.
 - **adapter/persistence** and **adapter/redis** return domain types, never sqlc rows, and translate driver errors: no rows -> `shared.ErrNotFound`, unique / foreign key violations -> `*shared.ConstraintError` (`shared.IsUnique`, `shared.IsForeignKey`), an unreachable Redis -> an error wrapping `shared.ErrUnavailable`.
 - Each feature has its own folder inside `adapter/http` and `adapter/persistence/postgres`; what the features share (the authenticator, `TxManager`, `Translate`, `Queries`) lives in the parent folder, which never imports a feature folder (linter rules `shared-http-is-not-a-feature`, `shared-postgres-is-not-a-feature`).
-- **adapter/http** is the only identity code that imports gin; it maps domain errors to `apperr` values (same codes and fields as before) and builds the response bodies. It never imports the persistence or Redis adapters (its integration tests do, to wire the real stack).
+- **adapter/http** is the only identity code that imports gin; it maps domain errors to `apperr` (`adapter/http/apperr`) values (same codes and fields as before) and builds the response bodies. It never imports the persistence or Redis adapters (its integration tests do, to wire the real stack).
 - **Transactions travel in the context**: a use case calls `tx.WithinTx(ctx, func(ctx) error {...})` and every repository call made with that ctx joins the transaction (`postgres.TxManager`, `postgres.Queries(ctx, pool)`).
-- **gin is imported only** by `pkg/httpx`, `app` and `adapter/http` (all its folders).
+- **gin is imported only** by `adapter/http` (all its folders, `httpx` included) and `cmd/rental-management`.
 - All error-to-HTTP mapping happens in `adapter/http` (`identity_errors.go`, `location/errors.go`, `property/errors.go`) and `httpx.Fail`; the domain and the use cases never return `apperr` values.
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
 - There is only one generated query package, `internal/adapter/persistence/postgres/sqlc` (query names are unique across all of `db/queries`).
@@ -300,7 +299,7 @@ POST /v1/rooms
 ```
 Status values: `available`, `rented`, `maintenance`. What blocks a room (running contract, open listing) and who must be told
 about changes (blank contracts, listings back to draft) are ports with no-op defaults (`RoomGuards`, `RoomObserver`) wired
-in `internal/app` when the contract and listing features arrive (both take only the `ctx`: the room change they react to runs in the
+in `cmd/rental-management` when the contract and listing features arrive (both take only the `ctx`: the room change they react to runs in the
 transaction the ctx carries).
 
 ### Pictures (landlord) and serving
@@ -443,9 +442,9 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/adapter/persistence/postgres/sqlc`).
 3. One slice per layer, named after the feature (see identity and property): domain first, then the use cases and their ports, then the adapters, then the wiring: `internal/domain/<context>/` (entities, pure rules with table tests, typed errors), `internal/usecase/<context>/` (`ports.go` + one file per use case), `internal/adapter/http/<context>/` (handlers, routes, bodies, error mapping; a new subfolder and package `<context>http`), `internal/adapter/persistence/postgres/<context>/` (repositories; a new subfolder and package `<context>pg` that uses `postgres.Queries` and `postgres.Translate` from the parent) and any other adapter the ports need.
 4. New permissions: add them to `internal/domain/identity/catalog.go` and the role matrix, then `make seed`.
-5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
+5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `internal/adapter/http/apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.
-7. Wire it in `internal/app` (build the repositories and use cases, mount the routes) and add its routes to the API table above.
+7. Wire it in `cmd/rental-management` (build the repositories and use cases, mount the routes) and add its routes to the API table above.
 8. Tests per layer: table tests for the rules in `domain`, hand-written fakes of the ports for the use cases, `<context>http_test` for the error mapping, integration (`//go:build integration`, `pkg/testdb`) for the repositories and the HTTP flows; run
    `make check lint test-integration`.
 
@@ -497,7 +496,7 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 
 - **Rooms (property)**: the plan, room-guard and room-observer ports (they receive only the `ctx`; the transaction
   travels in it) have no-op defaults until the plan and contract
-  features are wired in `internal/app`; deleting a room does not tell the observer (phase 3 will add what it needs).
+  features are wired in `cmd/rental-management`; deleting a room does not tell the observer (phase 3 will add what it needs).
   Room pictures stay in storage when the room is soft-deleted (history); orphaned files from a crash between the
   storage write and the commit are not swept (no background job yet). Copying a building with many rooms that have
   their own pictures duplicates every file before the transaction, so it can take a while.

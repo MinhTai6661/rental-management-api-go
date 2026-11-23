@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"rental-management/internal/adapter/http/apperr"
 	domain "rental-management/internal/domain/property"
-	"rental-management/pkg/apperr"
 )
 
 func TestPropertyErrorsMapToTheAPIsKindsCodesAndParams(t *testing.T) {

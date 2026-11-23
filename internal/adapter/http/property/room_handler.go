@@ -6,10 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	domain "rental-management/internal/domain/property"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
 )
 
 // RoomHandler serves the room routes: it binds the request, calls the use case and writes the answer.

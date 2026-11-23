@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 )
 
 // MaxPerPage is the largest page a client may ask for.

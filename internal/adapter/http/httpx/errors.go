@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 	"rental-management/pkg/db"
 	"rental-management/pkg/i18n"
 )

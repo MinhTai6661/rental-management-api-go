@@ -13,10 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/httpx"
 	locationhttp "rental-management/internal/adapter/http/location"
 	domain "rental-management/internal/domain/location"
 	usecase "rental-management/internal/usecase/location"
-	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/ratelimit"
 )

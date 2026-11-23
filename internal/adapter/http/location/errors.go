@@ -3,8 +3,8 @@ package locationhttp
 import (
 	"errors"
 
+	"rental-management/internal/adapter/http/apperr"
 	domain "rental-management/internal/domain/location"
-	"rental-management/pkg/apperr"
 )
 
 // mapLocationError turns the errors of the location use cases into the API's errors. Anything it does not know is

@@ -1,4 +1,4 @@
-package app
+package main
 
 import (
 	"strings"
@@ -33,7 +33,7 @@ func TestRunSeedDemoRefusesInProductionBeforeConnecting(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://nobody:nothing@127.0.0.1:1/none?sslmode=disable")
 	t.Setenv("SEED_DEMO_PASSWORD", "demo-password-123")
 
-	err := RunSeed(t.Context(), []string{"-demo"}, &strings.Builder{})
+	err := runSeed(t.Context(), []string{"-demo"}, &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "production") {
 		t.Fatalf("seed -demo must be refused in production: %v", err)
 	}

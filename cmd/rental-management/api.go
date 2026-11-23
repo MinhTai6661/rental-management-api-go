@@ -1,6 +1,6 @@
 // Package app wires the pieces together and runs the process. Nothing here is global: every dependency
 // is built in the Run functions and handed down.
-package app
+package main
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"rental-management/config"
 	"rental-management/internal/adapter/filestore"
 	httpadapter "rental-management/internal/adapter/http"
+	"rental-management/internal/adapter/http/httpx"
 	identityhttp "rental-management/internal/adapter/http/identity"
 	locationhttp "rental-management/internal/adapter/http/location"
 	propertyhttp "rental-management/internal/adapter/http/property"
@@ -35,7 +36,6 @@ import (
 	locationuc "rental-management/internal/usecase/location"
 	propertyuc "rental-management/internal/usecase/property"
 	"rental-management/pkg/db"
-	"rental-management/pkg/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/logger"
@@ -44,8 +44,8 @@ import (
 	"rental-management/pkg/storage"
 )
 
-// RunAPI serves the HTTP API until ctx is cancelled, then drains in-flight requests.
-func RunAPI(ctx context.Context) error {
+// runAPI serves the HTTP API until ctx is cancelled, then drains in-flight requests.
+func runAPI(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func RunAPI(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
-		Handler: NewRouter(Deps{
+		Handler: newRouter(routerDeps{
 			Log:            log,
 			Catalog:        catalog,
 			RequestTimeout: cfg.RequestTimeout,

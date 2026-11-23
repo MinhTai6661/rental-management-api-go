@@ -3,7 +3,7 @@ package httpx
 import (
 	"testing"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 )
 
 type chargeReq struct {

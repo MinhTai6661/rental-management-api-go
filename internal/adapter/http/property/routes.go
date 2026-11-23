@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rental-management/internal/adapter/http/httpx"
 	"rental-management/pkg/authz"
-	"rental-management/pkg/httpx"
 )
 
 // MountProperty adds the property routes to the /v1 group. Everything here belongs to the landlord: the caller must

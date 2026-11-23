@@ -1,6 +1,6 @@
 //go:build integration
 
-package app
+package main
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func TestReadyzPingsDatabaseAndRedis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(Deps{
+	router := newRouter(routerDeps{
 		Log:            slog.New(slog.DiscardHandler),
 		Catalog:        catalog,
 		RequestTimeout: 5 * time.Second,

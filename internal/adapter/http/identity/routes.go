@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/pkg/httpx"
+	"rental-management/internal/adapter/http/httpx"
 )
 
 // MountAuth adds the auth routes to the /v1 group. Everything is rate limited per client address; login also per

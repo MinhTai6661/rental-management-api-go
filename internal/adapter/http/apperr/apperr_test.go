@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"rental-management/pkg/i18n"
 )
 
 func TestConstructors(t *testing.T) {
@@ -64,6 +66,27 @@ func TestCodesAndRulesAreUnique(t *testing.T) {
 				t.Errorf("%s: %q listed twice", name, item)
 			}
 			seen[item] = true
+		}
+	}
+}
+
+// Every error code and validation rule the code can produce must have a message in both languages.
+func TestEveryCodeAndRuleIsTranslated(t *testing.T) {
+	c, err := i18n.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{i18n.Vietnamese, i18n.English} {
+		l := c.Localizer(locale)
+		for _, code := range Codes() {
+			if !l.Has("errors." + code) {
+				t.Errorf("%s: no message for error code %q", locale, code)
+			}
+		}
+		for _, rule := range Rules() {
+			if !l.Has("validation." + rule) {
+				t.Errorf("%s: no message for validation rule %q", locale, rule)
+			}
 		}
 	}
 }

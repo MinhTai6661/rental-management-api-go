@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"sort"
 	"testing"
-
-	"rental-management/pkg/apperr"
 )
 
 func TestNegotiate(t *testing.T) {
@@ -57,27 +55,6 @@ func TestCatalogLoadsBothLanguagesWithSameKeys(t *testing.T) {
 	for i := range vi {
 		if vi[i] != en[i] {
 			t.Errorf("key mismatch: vi %q, en %q", vi[i], en[i])
-		}
-	}
-}
-
-// Every error code and validation rule the code can produce must have a message in both languages.
-func TestEveryCodeAndRuleIsTranslated(t *testing.T) {
-	c, err := New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, locale := range []string{Vietnamese, English} {
-		l := c.Localizer(locale)
-		for _, code := range apperr.Codes() {
-			if !l.Has("errors." + code) {
-				t.Errorf("%s: no message for error code %q", locale, code)
-			}
-		}
-		for _, rule := range apperr.Rules() {
-			if !l.Has("validation." + rule) {
-				t.Errorf("%s: no message for validation rule %q", locale, rule)
-			}
 		}
 	}
 }

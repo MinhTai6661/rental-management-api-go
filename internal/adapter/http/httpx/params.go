@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"rental-management/pkg/apperr"
+	"rental-management/internal/adapter/http/apperr"
 )
 
 // ParseUUIDParam reads a UUID path parameter. A value that does not parse is a 404, the same answer as an id that

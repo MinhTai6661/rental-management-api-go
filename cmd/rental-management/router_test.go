@@ -1,4 +1,4 @@
-package app
+package main
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	"rental-management/pkg/i18n"
 	"rental-management/pkg/logger"
 )
@@ -81,7 +81,7 @@ func newTestRouter(t *testing.T, timeout time.Duration, ready ...func(context.Co
 		v1.GET("/t/panic", func(*gin.Context) { panic("boom") })
 		v1.GET("/t/slow", func(c *gin.Context) { <-c.Request.Context().Done() })
 	}
-	return NewRouter(Deps{
+	return newRouter(routerDeps{
 		Log: log, Catalog: catalog, RequestTimeout: timeout, CORSOrigins: []string{"http://localhost:2001"},
 		Modules: []func(*gin.RouterGroup){mount}, Ready: ready,
 	})

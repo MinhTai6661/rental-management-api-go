@@ -1,4 +1,4 @@
-package app
+package main
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	"rental-management/pkg/i18n"
 )
 
 // readyTimeout bounds how long /readyz waits for each dependency.
 const readyTimeout = 2 * time.Second
 
-// Deps is everything the router needs.
-type Deps struct {
+// routerDeps is everything the router needs.
+type routerDeps struct {
 	Log            *slog.Logger
 	Catalog        *i18n.Catalog
 	RequestTimeout time.Duration
@@ -31,9 +31,9 @@ type Deps struct {
 	Ready []func(context.Context) error
 }
 
-// NewRouter builds the HTTP engine: the middleware chain, the health endpoints, the /v1 group with the modules'
+// newRouter builds the HTTP engine: the middleware chain, the health endpoints, the /v1 group with the modules'
 // routes, and the JSON 404/405 answers.
-func NewRouter(d Deps) *gin.Engine {
+func newRouter(d routerDeps) *gin.Engine {
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
 	r.RedirectTrailingSlash = false

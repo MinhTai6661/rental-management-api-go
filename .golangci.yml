@@ -24,7 +24,7 @@ linters:
             - "**/config/**"
           deny:
             - pkg: rental-management/internal
-              desc: shared code must not import business code or the wiring layer
+              desc: shared code must not import business code or the composition root
         # Clean architecture for every context (identity, location, property): adapter -> usecase -> domain.
         #
         # domain is the enterprise rules: standard library, uuid and the pure pkg/authz only.
@@ -46,11 +46,11 @@ linters:
               desc: domain must not import use cases
             - pkg: rental-management/internal/adapter
               desc: domain must not import adapters
-            - pkg: rental-management/internal/app
-              desc: domain must not import the wiring layer
-            - pkg: rental-management/pkg/apperr
+            - pkg: rental-management/cmd
+              desc: domain must not import the composition root
+            - pkg: rental-management/internal/adapter/http/apperr
               desc: domain returns its own errors, the HTTP adapter maps them
-            - pkg: rental-management/pkg/httpx
+            - pkg: rental-management/internal/adapter/http/httpx
               desc: domain must not import HTTP helpers
             - pkg: rental-management/pkg/db
               desc: domain must not import the database helpers
@@ -77,11 +77,11 @@ linters:
               desc: use cases must not depend on cryptography libraries
             - pkg: rental-management/internal/adapter
               desc: use cases declare ports and must not import adapters
-            - pkg: rental-management/internal/app
-              desc: use cases must not import the wiring layer
-            - pkg: rental-management/pkg/apperr
+            - pkg: rental-management/cmd
+              desc: use cases must not import the composition root
+            - pkg: rental-management/internal/adapter/http/apperr
               desc: use cases return domain errors, the HTTP adapter maps them
-            - pkg: rental-management/pkg/httpx
+            - pkg: rental-management/internal/adapter/http/httpx
               desc: use cases must not import HTTP helpers
             - pkg: rental-management/pkg/db
               desc: use cases must not import the database helpers
@@ -106,8 +106,8 @@ linters:
               desc: infrastructure adapters must not depend on the HTTP framework
             - pkg: rental-management/internal/usecase
               desc: infrastructure adapters implement the ports structurally and must not import use cases
-            - pkg: rental-management/internal/app
-              desc: adapters must not import the wiring layer
+            - pkg: rental-management/cmd
+              desc: adapters must not import the composition root
         # The HTTP adapter turns HTTP into use case calls; it never touches the database or Redis (its integration
         # tests wire the real adapters, so test files are left out).
         adapter-http:
@@ -123,16 +123,48 @@ linters:
               desc: the HTTP adapter must not import the persistence adapter
             - pkg: rental-management/internal/adapter/redis
               desc: the HTTP adapter must not import the Redis adapter
-            - pkg: rental-management/internal/app
-              desc: adapters must not import the wiring layer
+            - pkg: rental-management/cmd
+              desc: adapters must not import the composition root
         # Each feature has its own folder inside the HTTP and the database adapter; what they share lives in the
         # parent folder, which therefore must never import a feature folder (it would make an import cycle).
+        # httpx and apperr are shared subpackages the features may import, so they are not on this list.
         shared-http-is-not-a-feature:
           files:
             - "**/internal/adapter/http/*.go"
           deny:
-            - pkg: rental-management/internal/adapter/http/
+            - pkg: rental-management/internal/adapter/http/identity
               desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/testenv
+              desc: the shared HTTP helpers must not import the feature packages
+        # httpx (envelope, middleware, binding) and apperr (error type + catalog) are leaves of the HTTP adapter:
+        # they know HTTP and pkg, never business code, the features or the other adapters.
+        http-helpers-are-leaves:
+          files:
+            - "**/internal/adapter/http/httpx/**"
+            - "**/internal/adapter/http/apperr/**"
+          deny:
+            - pkg: rental-management/internal/domain
+              desc: the HTTP helpers must not import the domain
+            - pkg: rental-management/internal/usecase
+              desc: the HTTP helpers must not import use cases
+            - pkg: rental-management/internal/adapter/http/identity
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/testenv
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence
+              desc: the HTTP helpers must not import the persistence adapter
+            - pkg: rental-management/internal/adapter/redis
+              desc: the HTTP helpers must not import the Redis adapter
+            - pkg: rental-management/cmd
+              desc: adapters must not import the composition root
         shared-postgres-is-not-a-feature:
           files:
             - "**/internal/adapter/persistence/postgres/*.go"

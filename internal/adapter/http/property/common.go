@@ -4,9 +4,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"rental-management/internal/adapter/http/apperr"
+	"rental-management/internal/adapter/http/httpx"
 	usecase "rental-management/internal/usecase/property"
-	"rental-management/pkg/apperr"
-	"rental-management/pkg/httpx"
 )
 
 // landlordIDOf is the caller of the request (RequireAuth ran before).

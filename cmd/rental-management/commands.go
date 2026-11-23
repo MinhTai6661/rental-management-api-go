@@ -1,4 +1,4 @@
-package app
+package main
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"rental-management/config"
@@ -23,8 +22,8 @@ import (
 	"rental-management/pkg/storage"
 )
 
-// RunMigrate runs `rental-management migrate [up|down|status]` (up by default).
-func RunMigrate(ctx context.Context, args []string, out io.Writer) error {
+// runMigrate runs `rental-management migrate [up|down|status]` (up by default).
+func runMigrate(ctx context.Context, args []string, out io.Writer) error {
 	command := "up"
 	if len(args) > 0 {
 		command = args[0]
@@ -41,8 +40,8 @@ func RunMigrate(ctx context.Context, args []string, out io.Writer) error {
 	return db.Migrate(ctx, pool, command, out)
 }
 
-// RunSeed runs `rental-management seed [-demo]`: it loads the reference data (roles, permissions, provinces, wards).
-func RunSeed(ctx context.Context, args []string, out io.Writer) error {
+// runSeed runs `rental-management seed [-demo]`: it loads the reference data (roles, permissions, provinces, wards).
+func runSeed(ctx context.Context, args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	demo := fs.Bool("demo", false, "also create the demo accounts")
@@ -118,6 +117,3 @@ func loadWithDatabase() (config.Config, error) {
 	}
 	return cfg, cfg.RequireDatabase()
 }
-
-// Stdout is where the commands print their progress.
-func Stdout() io.Writer { return os.Stdout }

@@ -3,9 +3,9 @@ package httpadapter
 import (
 	"errors"
 
+	"rental-management/internal/adapter/http/apperr"
 	domain "rental-management/internal/domain/identity"
 	"rental-management/internal/domain/shared"
-	"rental-management/pkg/apperr"
 )
 
 // MapIdentityError turns the errors of the identity use cases into the API's errors. Anything it does not know is

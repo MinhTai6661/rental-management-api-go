@@ -8,8 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"rental-management/internal/app"
 )
 
 func main() {
@@ -23,17 +21,17 @@ func main() {
 
 	switch cmd := os.Args[1]; cmd {
 	case "api":
-		if err := app.RunAPI(ctx); err != nil {
+		if err := runAPI(ctx); err != nil {
 			fmt.Fprintln(os.Stderr, "rental-management:", err)
 			os.Exit(1)
 		}
 	case "migrate":
-		if err := app.RunMigrate(ctx, os.Args[2:], app.Stdout()); err != nil {
+		if err := runMigrate(ctx, os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "rental-management:", err)
 			os.Exit(1)
 		}
 	case "seed":
-		if err := app.RunSeed(ctx, os.Args[2:], app.Stdout()); err != nil {
+		if err := runSeed(ctx, os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "rental-management:", err)
 			os.Exit(1)
 		}
