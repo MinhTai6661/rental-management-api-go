@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -98,6 +99,23 @@ func (f fakeReader) Wards(_ context.Context, code int32) ([]Item, bool, error) {
 	return w, ok, f.err
 }
 
+// countingLimiter is a minimal fixed-count limiter for the unit tests (the real one needs Redis): the first limit
+// requests of a key pass, the rest are refused with a one-minute wait.
+type countingLimiter struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func (c *countingLimiter) Allow(_ context.Context, key string, limit int, window time.Duration) (ratelimit.Result, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.counts[key]++
+	if c.counts[key] > limit {
+		return ratelimit.Result{Allowed: false, RetryAfter: window}, nil
+	}
+	return ratelimit.Result{Allowed: true}, nil
+}
+
 func newTestRouter(t *testing.T, r reader, limit int) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -107,7 +125,7 @@ func newTestRouter(t *testing.T, r reader, limit int) *gin.Engine {
 	}
 	engine := gin.New()
 	engine.Use(httpx.Locale(catalog))
-	limiter := ratelimit.NewMemory(time.Now)
+	limiter := &countingLimiter{counts: map[string]int{}}
 	mount(r, Options{Limiter: limiter, Limit: limit, Window: time.Minute})(engine.Group("/v1"))
 	return engine
 }

@@ -8,8 +8,10 @@ Status: **phase 1** - platform, location (provinces/wards) and identity (registe
 refresh, logout, role switch, password change). Later phases are listed in the [roadmap](#roadmap).
 
 Stack: [Gin](https://gin-gonic.com) (HTTP) - [pgx](https://github.com/jackc/pgx) + [sqlc](https://sqlc.dev) +
-[goose](https://github.com/pressly/goose) (Postgres 18) - go-redis (revoked tokens, rate limits) - `log/slog` -
-argon2id + JWT (golang-jwt) - testcontainers (integration tests). Go 1.26.
+[goose](https://github.com/pressly/goose) (Postgres 18) - go-redis (revoked tokens) +
+[redis_rate](https://github.com/go-redis/redis_rate) (rate limits) - [go-mail](https://github.com/wneessen/go-mail)
+(SMTP) - [go-i18n](https://github.com/nicksnyder/go-i18n) + `x/text/language` (vi/en messages, Accept-Language) -
+`log/slog` - argon2id + JWT (golang-jwt) - testcontainers (integration tests). Go 1.26.
 
 ## Quick start
 
@@ -95,10 +97,10 @@ internal/
     httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
     apperr/                   the error type services return + the error-code and validation-rule catalog
     authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
-    i18n/                     vi/en messages and Accept-Language negotiation
+    i18n/                     vi/en messages (go-i18n, embedded JSON) and Accept-Language negotiation (x/text/language)
     db/                       pgx pool, transactions, error helpers, goose runner
-    ratelimit/                fixed-window counters, in memory or in Redis
-    mail/                     Mailer port: SMTP, log, test recorder; vi/en email templates
+    ratelimit/                per-client limits on Redis (redis_rate, GCRA); the Limiter interface the middleware uses
+    mail/                     Mailer port: SMTP (go-mail), log, test recorder; vi/en email templates
     logger/                   slog setup
     testdb/                   throwaway Postgres/Redis containers + the guard for integration tests
 ```
@@ -225,7 +227,8 @@ Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `
   (`WEB_URL/verify-email?token=...`, 24 h, only the hash is stored). Login before verification answers 403
   `auth.email_unverified` (after the password checks out). `email/resend` always answers 202 and respects a cooldown.
   Emails are sent in the background, so the response time does not reveal whether an address has an account.
-- **Rate limits** (per client address, fixed window, in Redis): see the route table; login also limits per address +
+- **Rate limits** (per client address, GCRA in Redis through redis_rate: a burst of N, then N per minute; keys are
+  `rate:<REDIS_KEY_PREFIX>rl:<bucket>:<address>`): see the route table; login also limits per address +
   hashed email. Set up trusted proxies before putting a reverse proxy in front (gin currently trusts none, so
   `X-Forwarded-For` cannot be spoofed).
 
@@ -316,7 +319,9 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 - **Rehash on login** is not implemented: if the argon2 parameters change, old hashes stay until the password changes.
 - No rate limit per *account* on password change (only per client address, 5/min).
 - Graceful shutdown (including waiting for emails still being sent) is implemented but its log line was not observed.
-- Sending real mail over SMTP with STARTTLS/authentication is untested (only Mailpit, and rendering/MIME in tests).
+- SMTP goes through go-mail with opportunistic STARTTLS (TLS 1.2+) and the strongest AUTH the server offers when
+  `SMTP_USERNAME` is set, but only plain delivery was tested (Mailpit in the compose stack has no TLS or AUTH, and the
+  unit test uses a fake server): STARTTLS and AUTH against a real provider are untested.
 - When a session is closed (reuse detected, inactive account) and Redis is down, the database revocation holds (the
   refresh token stops working) but the still-valid access tokens of that session live until they expire (15 min): the
   failure is logged, not returned.

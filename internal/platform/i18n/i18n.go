@@ -1,13 +1,14 @@
-// Package i18n holds the vi/en message catalog and picks the language of a request.
-// Messages use :placeholder syntax, e.g. "The :attribute field is required.".
+// Package i18n holds the vi/en message catalog and picks the language of a request. Messages live in embedded JSON
+// files (key -> text) and are rendered by go-i18n, so a text may use templates such as "{{.attribute}}".
 package i18n
 
 import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
+
+	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
+	"golang.org/x/text/language"
 )
 
 // Supported languages. Vietnamese is the default.
@@ -16,34 +17,42 @@ const (
 	English    = "en"
 )
 
+// languages lists the supported languages, default first. The order matters for the language matcher.
+var languages = []struct {
+	code string
+	tag  language.Tag
+}{
+	{Vietnamese, language.Vietnamese},
+	{English, language.English},
+}
+
 //go:embed locales/*.json
 var localeFiles embed.FS
 
 // Catalog is the set of messages of every supported language, loaded once at start-up.
 type Catalog struct {
-	messages map[string]map[string]string // locale -> key -> text
+	localizers map[string]*goi18n.Localizer // by language code
+	tags       map[string]language.Tag
 }
 
 // New loads the embedded locale files.
 func New() (*Catalog, error) {
-	c := &Catalog{messages: map[string]map[string]string{}}
-	for _, locale := range []string{Vietnamese, English} {
-		raw, err := localeFiles.ReadFile("locales/" + locale + ".json")
-		if err != nil {
-			return nil, fmt.Errorf("read %s locale: %w", locale, err)
+	bundle := goi18n.NewBundle(language.Vietnamese)
+	bundle.RegisterUnmarshalFunc("json", json.Unmarshal)
+	c := &Catalog{localizers: map[string]*goi18n.Localizer{}, tags: map[string]language.Tag{}}
+	for _, lang := range languages {
+		if _, err := bundle.LoadMessageFileFS(localeFiles, "locales/"+lang.code+".json"); err != nil {
+			return nil, fmt.Errorf("load %s locale: %w", lang.code, err)
 		}
-		var msgs map[string]string
-		if err := json.Unmarshal(raw, &msgs); err != nil {
-			return nil, fmt.Errorf("parse %s locale: %w", locale, err)
-		}
-		c.messages[locale] = msgs
+		c.localizers[lang.code] = goi18n.NewLocalizer(bundle, lang.code)
+		c.tags[lang.code] = lang.tag
 	}
 	return c, nil
 }
 
 // Localizer returns the translator of one language; an unknown language falls back to Vietnamese.
 func (c *Catalog) Localizer(locale string) Localizer {
-	if _, ok := c.messages[locale]; !ok {
+	if _, ok := c.localizers[locale]; !ok {
 		locale = Vietnamese
 	}
 	return Localizer{catalog: c, locale: locale}
@@ -58,36 +67,32 @@ type Localizer struct {
 // Locale is the language code this localizer speaks.
 func (l Localizer) Locale() string { return l.locale }
 
-// Has reports whether key exists in this language.
+// Has reports whether key exists in this language itself (a key found only in the fallback language does not count).
 func (l Localizer) Has(key string) bool {
-	if l.catalog == nil {
-		return false
-	}
-	_, ok := l.catalog.messages[l.locale][key]
+	_, ok := l.render(key, nil)
 	return ok
 }
 
-// T returns the message of key with :placeholders replaced from args. A missing key is returned as is, so a gap shows up in the response instead of hiding.
+// T returns the message of key with its {{.placeholders}} filled from args. A missing key is returned as is, so a
+// gap shows up in the response instead of hiding.
 func (l Localizer) T(key string, args map[string]string) string {
-	if !l.Has(key) {
-		return key
-	}
-	return replace(l.catalog.messages[l.locale][key], args)
-}
-
-// replace swaps ":name" for args["name"], longest names first so ":attributes" is not clipped by ":attribute".
-func replace(text string, args map[string]string) string {
-	if len(args) == 0 {
+	if text, ok := l.render(key, args); ok {
 		return text
 	}
-	names := make([]string, 0, len(args))
-	for name := range args {
-		names = append(names, name)
+	return key
+}
+
+func (l Localizer) render(key string, args map[string]string) (string, bool) {
+	if l.catalog == nil {
+		return "", false
 	}
-	sort.Slice(names, func(i, j int) bool { return len(names[i]) > len(names[j]) })
-	pairs := make([]string, 0, len(names)*2)
-	for _, name := range names {
-		pairs = append(pairs, ":"+name, args[name])
+	var data any
+	if len(args) > 0 {
+		data = args
 	}
-	return strings.NewReplacer(pairs...).Replace(text)
+	text, tag, err := l.catalog.localizers[l.locale].LocalizeWithTag(&goi18n.LocalizeConfig{MessageID: key, TemplateData: data})
+	if err != nil || tag != l.catalog.tags[l.locale] {
+		return "", false
+	}
+	return text, true
 }

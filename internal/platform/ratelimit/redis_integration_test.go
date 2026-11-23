@@ -26,27 +26,28 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestRedisLimitsAndExpires(t *testing.T) {
+func TestRedisLimitsAndRecovers(t *testing.T) {
 	ctx := context.Background()
 	l := NewRedis(rds.Client(t), "test:")
-	window := 400 * time.Millisecond
+	// 5 per 500ms: a burst of 5, then one more request every 100ms.
+	const limit, window = 5, 500 * time.Millisecond
 
-	for i := 1; i <= 2; i++ {
-		if res, err := l.Allow(ctx, "k", 2, window); err != nil || !res.Allowed {
+	for i := 1; i <= limit; i++ {
+		if res, err := l.Allow(ctx, "k", limit, window); err != nil || !res.Allowed {
 			t.Fatalf("request %d: %+v %v", i, res, err)
 		}
 	}
-	res, err := l.Allow(ctx, "k", 2, window)
+	res, err := l.Allow(ctx, "k", limit, window)
 	if err != nil || res.Allowed || res.RetryAfter <= 0 || res.RetryAfter > window {
-		t.Fatalf("third request must be refused with a wait: %+v %v", res, err)
+		t.Fatalf("the request over the limit must be refused with a wait: %+v %v", res, err)
 	}
-	if res, _ := l.Allow(ctx, "other", 2, window); !res.Allowed {
-		t.Error("another key has its own counter")
+	if res, _ := l.Allow(ctx, "other", limit, window); !res.Allowed {
+		t.Error("another key has its own budget")
 	}
 
-	time.Sleep(window + 100*time.Millisecond)
-	if res, _ := l.Allow(ctx, "k", 2, window); !res.Allowed {
-		t.Error("the window ended, the key must be allowed again")
+	time.Sleep(res.RetryAfter + 50*time.Millisecond)
+	if res, _ := l.Allow(ctx, "k", limit, window); !res.Allowed {
+		t.Error("after the wait the key must be allowed again")
 	}
 }
 

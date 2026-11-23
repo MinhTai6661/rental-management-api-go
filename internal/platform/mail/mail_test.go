@@ -1,7 +1,6 @@
 package mail
 
 import (
-	"net/mail"
 	"strings"
 	"testing"
 	"time"
@@ -55,32 +54,5 @@ func TestVerifyEmailEscapesTheNameInHTML(t *testing.T) {
 	msg := render(t, "en", `<script>alert(1)</script>`)
 	if strings.Contains(msg.HTML, "<script>") {
 		t.Errorf("name was not escaped in HTML:\n%s", msg.HTML)
-	}
-}
-
-func TestBuildMIME(t *testing.T) {
-	from, _ := mail.ParseAddress("Rental <no-reply@rental.test>")
-	to, _ := mail.ParseAddress("a@example.vn")
-	date := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
-
-	raw, err := buildMIME(from, to, Message{Subject: "Xác nhận", Text: "plain", HTML: "<p>html</p>"}, date)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(raw)
-	for _, want := range []string{
-		"From: \"Rental\" <no-reply@rental.test>", "To: <a@example.vn>", "Subject: =?utf-8?q?", "MIME-Version: 1.0",
-		"multipart/alternative", "text/plain", "text/html",
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("message lacks %q:\n%s", want, s)
-		}
-	}
-	if strings.Index(s, "text/plain") > strings.Index(s, "text/html") {
-		t.Error("the HTML part must come last")
-	}
-
-	if _, err := buildMIME(from, to, Message{Subject: "a\r\nBcc: x@evil.test"}, date); err == nil {
-		t.Error("a subject with a line break must be refused")
 	}
 }

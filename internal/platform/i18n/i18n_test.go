@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"encoding/json"
 	"sort"
 	"testing"
 
@@ -30,13 +31,20 @@ func TestNegotiate(t *testing.T) {
 }
 
 func TestCatalogLoadsBothLanguagesWithSameKeys(t *testing.T) {
-	c, err := New()
-	if err != nil {
+	if _, err := New(); err != nil {
 		t.Fatal(err)
 	}
 	keys := func(locale string) []string {
+		raw, err := localeFiles.ReadFile("locales/" + locale + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var messages map[string]string
+		if err := json.Unmarshal(raw, &messages); err != nil {
+			t.Fatal(err)
+		}
 		var out []string
-		for k := range c.messages[locale] {
+		for k := range messages {
 			out = append(out, k)
 		}
 		sort.Strings(out)
@@ -99,5 +107,18 @@ func TestUnknownLocaleFallsBackToVietnamese(t *testing.T) {
 	c, _ := New()
 	if got := c.Localizer("fr").Locale(); got != Vietnamese {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A text without placeholders ignores the arguments, and one with placeholders still renders when an argument is
+// missing instead of failing the request.
+func TestTranslateWithoutOrWithMissingArgs(t *testing.T) {
+	c, _ := New()
+	l := c.Localizer(English)
+	if got, want := l.T("errors.auth.unauthenticated", map[string]string{"x": "y"}), "Please log in."; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := l.T("validation.required", nil); got == "validation.required" || got == "" {
+		t.Errorf("a message with a missing argument must still render, got %q", got)
 	}
 }
