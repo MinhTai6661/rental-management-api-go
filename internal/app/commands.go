@@ -11,6 +11,8 @@ import (
 
 	"rental-management/config"
 	"rental-management/internal/adapter/persistence/postgres"
+	identitypg "rental-management/internal/adapter/persistence/postgres/identity"
+	locationpg "rental-management/internal/adapter/persistence/postgres/location"
 	"rental-management/internal/adapter/security"
 	"rental-management/internal/adapter/snapshot/locationdata"
 	domain "rental-management/internal/domain/identity"
@@ -65,9 +67,9 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	defer pool.Close()
 
 	tx := postgres.NewTxManager(pool)
-	users := postgres.NewUserRepository(pool)
-	seeder := usecase.NewSeeder(tx, postgres.NewPermissionRepository(pool), users, security.PasswordHasher{})
-	locations := locationuc.NewSeeder(tx, postgres.NewLocationRepository(pool), locationdata.Source{})
+	users := identitypg.NewUserRepository(pool)
+	seeder := usecase.NewSeeder(tx, identitypg.NewPermissionRepository(pool), users, security.PasswordHasher{})
+	locations := locationuc.NewSeeder(tx, locationpg.NewLocationRepository(pool), locationdata.Source{})
 	if err := seeder.SeedCatalog(ctx); err != nil {
 		return err
 	}

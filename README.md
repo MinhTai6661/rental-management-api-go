@@ -115,8 +115,15 @@ internal/
     location/                 Locations (list provinces, wards of a province), Seeder (load the snapshot)
     property/                 Buildings, Rooms, Media (one file per use case or small group; a building edit reaches its rooms in one transaction), Seeder (demo data); ports: repositories, FileStore, ImageProcessor, PlanLimits, RoomGuards, RoomObserver
   adapter/                    everything that talks to the outside world; implements the ports declared by the use cases
-    http/                     (package httpadapter) gin handlers, routes, request/response bodies, domain error -> apperr mapping
-    persistence/postgres/     (package postgres) TxManager, repositories, row <-> domain mapping, error translation
+    http/                     (package httpadapter) what the HTTP features share: the Authenticator (+ identity error mapping) and views used by several features; never imports a feature folder
+      identity/               (package identityhttp) auth handlers, routes, request/response bodies
+      location/               (package locationhttp) public province and ward routes
+      property/               (package propertyhttp) building, room and media handlers, routes, bodies, domain error -> apperr mapping, ETags
+      testenv/                response helpers of the HTTP integration tests, shared by the features
+    persistence/postgres/     (package postgres) what the repositories share: TxManager, error translation (Translate), context-bound queries (Queries); never imports a feature folder
+      identity/               (package identitypg) user, session, verification and permission repositories
+      location/               (package locationpg) location repository
+      property/               (package propertypg) building, room, charge and media repositories, row <-> domain mapping
       sqlc/                   the one generated sqlc package (all queries of db/queries)
     redis/                    (package redisstore) the revoked tokens and sessions store
     security/                 argon2id password hasher, JWT access tokens, opaque random tokens
@@ -129,14 +136,14 @@ internal/
 
 Identity (accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed) is the first
 context moved to the clean architecture and is the template: `domain/identity/`, `usecase/identity/` (`ports.go`,
-`register.go`, `login.go`, ...), `adapter/http/auth_*.go`, `adapter/persistence/postgres/*_repository.go`,
+`register.go`, `login.go`, ...), `adapter/http/identity/`, `adapter/persistence/postgres/identity/`,
 `adapter/redis/`, `adapter/security/`, `adapter/mail/`. Location (provinces and wards, public and rate limited,
 cacheable; read-mostly, so thin) follows it: `domain/location/`, `usecase/location/` (`Locations` to list, `Seeder`
-to load the snapshot), `adapter/http/location_*.go`, `adapter/persistence/postgres/location_repository.go` and
+to load the snapshot), `adapter/http/location/`, `adapter/persistence/postgres/location/` and
 `adapter/snapshot/locationdata/` (the embedded snapshot behind the `SnapshotSource` port). Property (buildings,
 rooms, charges, pictures) is the last one moved, so every feature is in the layers: `domain/property/` (rules and
-typed errors), `usecase/property/` (`Buildings`, `Rooms`, `Media`, `Seeder`), `adapter/http/{building,room,media}_handler.go`
-and `property_*.go`, `adapter/persistence/postgres/{building,room,charge,media}_repository.go`, `adapter/filestore/`
+typed errors), `usecase/property/` (`Buildings`, `Rooms`, `Media`, `Seeder`), `adapter/http/property/`,
+`adapter/persistence/postgres/property/`, `adapter/filestore/`
 and `adapter/imageproc/`.
 
 Where does new code go? Business behaviour -> the layers above. A technical tool several features share (HTTP,
@@ -148,10 +155,11 @@ Rules (checked in review and by the linters, see `.golangci.yml`):
 - **domain** imports the standard library, uuid and `pkg/authz` only: no struct tags, gin, pgx, redis, JWT, argon2, `apperr`. It returns typed errors (`identity.ErrEmailTaken`, ...), never HTTP ones.
 - **usecase** imports `domain` (and stdlib, uuid, `pkg/authz`), never an adapter, gin, pgx, go-redis, the JWT library or `apperr`. Ports take domain types or plain values, so an adapter implements them without importing the use case package.
 - **adapter/persistence** and **adapter/redis** return domain types, never sqlc rows, and translate driver errors: no rows -> `shared.ErrNotFound`, unique / foreign key violations -> `*shared.ConstraintError` (`shared.IsUnique`, `shared.IsForeignKey`), an unreachable Redis -> an error wrapping `shared.ErrUnavailable`.
+- Each feature has its own folder inside `adapter/http` and `adapter/persistence/postgres`; what the features share (the authenticator, `TxManager`, `Translate`, `Queries`) lives in the parent folder, which never imports a feature folder (linter rules `shared-http-is-not-a-feature`, `shared-postgres-is-not-a-feature`).
 - **adapter/http** is the only identity code that imports gin; it maps domain errors to `apperr` values (same codes and fields as before) and builds the response bodies. It never imports the persistence or Redis adapters (its integration tests do, to wire the real stack).
-- **Transactions travel in the context**: a use case calls `tx.WithinTx(ctx, func(ctx) error {...})` and every repository call made with that ctx joins the transaction (`postgres.TxManager`, `queries(ctx, pool)`).
-- **gin is imported only** by `pkg/httpx`, `app` and `adapter/http`.
-- All error-to-HTTP mapping happens in `adapter/http` (`auth_errors.go`, `location_errors.go`, `property_errors.go`) and `httpx.Fail`; the domain and the use cases never return `apperr` values.
+- **Transactions travel in the context**: a use case calls `tx.WithinTx(ctx, func(ctx) error {...})` and every repository call made with that ctx joins the transaction (`postgres.TxManager`, `postgres.Queries(ctx, pool)`).
+- **gin is imported only** by `pkg/httpx`, `app` and `adapter/http` (all its folders).
+- All error-to-HTTP mapping happens in `adapter/http` (`identity_errors.go`, `location/errors.go`, `property/errors.go`) and `httpx.Fail`; the domain and the use cases never return `apperr` values.
 - SQL only under `db/`; no global mutable state, no `init()`; pass `c.Request.Context()` down; comments in English.
 - There is only one generated query package, `internal/adapter/persistence/postgres/sqlc` (query names are unique across all of `db/queries`).
 - Pure business rules (calculations, state machines) live in small, DB-free functions with table tests in `domain`; use cases are tested with hand-written fakes of their ports (no database).
@@ -433,12 +441,12 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 
 1. Migration in `db/migrations/` (UUID v7 ids, snake_case names with units, `timestamptz`, money as `bigint` VND).
 2. Queries in `db/queries/<module>/*.sql`, then `make sqlc` (no hand-edits in `internal/adapter/persistence/postgres/sqlc`).
-3. One slice per layer, named after the feature (see identity and property): domain first, then the use cases and their ports, then the adapters, then the wiring: `internal/domain/<context>/` (entities, pure rules with table tests, typed errors), `internal/usecase/<context>/` (`ports.go` + one file per use case), `internal/adapter/http/` (handlers, routes, bodies, error mapping), `internal/adapter/persistence/postgres/` (repositories) and any other adapter the ports need.
+3. One slice per layer, named after the feature (see identity and property): domain first, then the use cases and their ports, then the adapters, then the wiring: `internal/domain/<context>/` (entities, pure rules with table tests, typed errors), `internal/usecase/<context>/` (`ports.go` + one file per use case), `internal/adapter/http/<context>/` (handlers, routes, bodies, error mapping; a new subfolder and package `<context>http`), `internal/adapter/persistence/postgres/<context>/` (repositories; a new subfolder and package `<context>pg` that uses `postgres.Queries` and `postgres.Translate` from the parent) and any other adapter the ports need.
 4. New permissions: add them to `internal/domain/identity/catalog.go` and the role matrix, then `make seed`.
 5. New error codes / validation rules: constants + `Codes()`/`Rules()` in `apperr` and the vi and en locale files.
 6. Paginate every list (`httpx.ParsePage` + meta); only bounded reference data may skip it.
 7. Wire it in `internal/app` (build the repositories and use cases, mount the routes) and add its routes to the API table above.
-8. Tests per layer: table tests for the rules in `domain`, hand-written fakes of the ports for the use cases, `httpadapter_test` for the error mapping, integration (`//go:build integration`, `pkg/testdb`) for the repositories and the HTTP flows; run
+8. Tests per layer: table tests for the rules in `domain`, hand-written fakes of the ports for the use cases, `<context>http_test` for the error mapping, integration (`//go:build integration`, `pkg/testdb`) for the repositories and the HTTP flows; run
    `make check lint test-integration`.
 
 ## Roadmap

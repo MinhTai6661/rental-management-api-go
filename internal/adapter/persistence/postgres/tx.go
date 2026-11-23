@@ -1,5 +1,7 @@
-// Package postgres is the only place that talks to the database (through the generated sqlc package). Its
-// repositories take and return domain types, never sqlc rows.
+// Package postgres holds what every feature of the database adapter shares: the transaction manager, the driver error
+// translation and the context-bound queries. The repositories live in one subpackage per feature (identitypg,
+// locationpg, propertypg); this adapter is the only place that talks to the database (through the generated sqlc
+// package) and its repositories take and return domain types, never sqlc rows.
 package postgres
 
 import (
@@ -31,12 +33,12 @@ func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) e
 	err := db.WithTx(ctx, m.pool, func(tx pgx.Tx) error {
 		return fn(context.WithValue(ctx, txKey{}, tx))
 	})
-	return translate(err)
+	return Translate(err)
 }
 
-// queries returns the generated queries bound to the transaction of ctx, or to the pool when there is none. Every
+// Queries returns the generated queries bound to the transaction of ctx, or to the pool when there is none. Every
 // repository method gets its queries here, which is what makes it join the caller's transaction.
-func queries(ctx context.Context, pool *pgxpool.Pool) *sqlcgen.Queries {
+func Queries(ctx context.Context, pool *pgxpool.Pool) *sqlcgen.Queries {
 	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
 		return sqlcgen.New(tx)
 	}

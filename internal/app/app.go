@@ -20,9 +20,15 @@ import (
 	"rental-management/config"
 	"rental-management/internal/adapter/filestore"
 	httpadapter "rental-management/internal/adapter/http"
+	identityhttp "rental-management/internal/adapter/http/identity"
+	locationhttp "rental-management/internal/adapter/http/location"
+	propertyhttp "rental-management/internal/adapter/http/property"
 	"rental-management/internal/adapter/imageproc"
 	mailadapter "rental-management/internal/adapter/mail"
 	"rental-management/internal/adapter/persistence/postgres"
+	identitypg "rental-management/internal/adapter/persistence/postgres/identity"
+	locationpg "rental-management/internal/adapter/persistence/postgres/location"
+	propertypg "rental-management/internal/adapter/persistence/postgres/property"
 	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/adapter/security"
 	usecase "rental-management/internal/usecase/identity"
@@ -81,7 +87,7 @@ func RunAPI(ctx context.Context) error {
 		return err
 	}
 	authenticator := httpadapter.NewAuthenticator(auth)
-	locations := locationuc.NewLocations(postgres.NewLocationRepository(pool))
+	locations := locationuc.NewLocations(locationpg.NewLocationRepository(pool))
 
 	files, err := storage.NewLocalDisk(cfg.MediaDir, cfg.MediaPublicBaseURL)
 	if err != nil {
@@ -99,18 +105,18 @@ func RunAPI(ctx context.Context) error {
 			Ready:          ready,
 			Modules: []func(*gin.RouterGroup){
 				func(v1 *gin.RouterGroup) {
-					httpadapter.MountLocations(v1, httpadapter.NewLocationHandler(locations), limiter,
-						httpadapter.LocationDefaultLimit, httpadapter.LocationDefaultWindow)
+					locationhttp.MountLocations(v1, locationhttp.NewLocationHandler(locations), limiter,
+						locationhttp.DefaultLimit, locationhttp.DefaultWindow)
 				},
 				func(v1 *gin.RouterGroup) {
-					httpadapter.MountAuth(v1, httpadapter.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
+					identityhttp.MountAuth(v1, identityhttp.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
 					binder := httpx.NewBinder()
-					httpadapter.MountProperty(v1,
-						httpadapter.NewBuildingHandler(properties.buildings, files, binder),
-						httpadapter.NewRoomHandler(properties.rooms, files, binder),
-						httpadapter.NewMediaHandler(properties.media, files, binder, cfg.MediaMaxUploadBytes),
+					propertyhttp.MountProperty(v1,
+						propertyhttp.NewBuildingHandler(properties.buildings, files, binder),
+						propertyhttp.NewRoomHandler(properties.rooms, files, binder),
+						propertyhttp.NewMediaHandler(properties.media, files, binder, cfg.MediaMaxUploadBytes),
 						authenticator, limiter)
 				},
 			},
@@ -159,10 +165,10 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 	}
 	return usecase.NewAuth(usecase.Deps{
 		Tx:            postgres.NewTxManager(pool),
-		Users:         postgres.NewUserRepository(pool),
-		Sessions:      postgres.NewSessionRepository(pool),
-		Verifications: postgres.NewVerificationRepository(pool),
-		Permissions:   postgres.NewPermissionRepository(pool),
+		Users:         identitypg.NewUserRepository(pool),
+		Sessions:      identitypg.NewSessionRepository(pool),
+		Verifications: identitypg.NewVerificationRepository(pool),
+		Permissions:   identitypg.NewPermissionRepository(pool),
 		Revocations:   redisstore.NewRevocationStore(rdb, cfg.RedisKeyPrefix),
 		Hasher:        security.PasswordHasher{},
 		Tokens:        security.NewTokenIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL, cfg.JWTLeeway, time.Now),
@@ -195,10 +201,10 @@ type property struct {
 func newProperty(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage) property {
 	deps := propertyuc.Deps{
 		Tx:        postgres.NewTxManager(pool),
-		Buildings: postgres.NewBuildingRepository(pool),
-		Rooms:     postgres.NewRoomRepository(pool),
-		Charges:   postgres.NewChargeRepository(pool),
-		Media:     postgres.NewMediaRepository(pool),
+		Buildings: propertypg.NewBuildingRepository(pool),
+		Rooms:     propertypg.NewRoomRepository(pool),
+		Charges:   propertypg.NewChargeRepository(pool),
+		Media:     propertypg.NewMediaRepository(pool),
 		Files:     filestore.New(files),
 		Images: imageproc.New(imaging.NewProcessor(imaging.Limits{
 			MaxBytes: cfg.MediaMaxUploadBytes, MaxDimension: cfg.MediaMaxDimension, ThumbMaxSize: cfg.MediaThumbnailMaxSize,

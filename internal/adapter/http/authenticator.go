@@ -1,3 +1,6 @@
+// Package httpadapter holds what the HTTP features share: the authenticator that every feature mounts behind
+// httpx.RequireAuth, and the mapping of the identity errors it needs. Each feature has its own subpackage
+// (identityhttp, locationhttp, propertyhttp); the parent never imports them.
 package httpadapter
 
 import (
@@ -16,5 +19,5 @@ func NewAuthenticator(auth *usecase.Auth) *Authenticator { return &Authenticator
 // Authenticate turns a bearer token into the caller of the request.
 func (a *Authenticator) Authenticate(ctx context.Context, bearer string) (authz.Principal, error) {
 	p, err := a.auth.Authenticate(ctx, bearer)
-	return p, mapError(err)
+	return p, MapIdentityError(err)
 }

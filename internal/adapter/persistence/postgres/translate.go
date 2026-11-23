@@ -15,9 +15,9 @@ const (
 	sqlStateForeignKeyViolation = "23503"
 )
 
-// translate turns a driver error into a domain error: no rows becomes shared.ErrNotFound, a unique or foreign key
+// Translate turns a driver error into a domain error: no rows becomes shared.ErrNotFound, a unique or foreign key
 // violation a *shared.ConstraintError. Any other error is returned as it is.
-func translate(err error) error {
+func Translate(err error) error {
 	if err == nil {
 		return nil
 	}

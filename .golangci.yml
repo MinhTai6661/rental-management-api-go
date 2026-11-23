@@ -125,6 +125,24 @@ linters:
               desc: the HTTP adapter must not import the Redis adapter
             - pkg: rental-management/internal/app
               desc: adapters must not import the wiring layer
+        # Each feature has its own folder inside the HTTP and the database adapter; what they share lives in the
+        # parent folder, which therefore must never import a feature folder (it would make an import cycle).
+        shared-http-is-not-a-feature:
+          files:
+            - "**/internal/adapter/http/*.go"
+          deny:
+            - pkg: rental-management/internal/adapter/http/
+              desc: the shared HTTP helpers must not import the feature packages
+        shared-postgres-is-not-a-feature:
+          files:
+            - "**/internal/adapter/persistence/postgres/*.go"
+          deny:
+            - pkg: rental-management/internal/adapter/persistence/postgres/identity
+              desc: the shared database helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence/postgres/location
+              desc: the shared database helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence/postgres/property
+              desc: the shared database helpers must not import the feature packages
   exclusions:
     presets:
       - std-error-handling

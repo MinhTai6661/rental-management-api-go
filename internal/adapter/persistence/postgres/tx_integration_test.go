@@ -53,7 +53,7 @@ func TestWithinTxCommitsOnNil(t *testing.T) {
 	ctx := context.Background()
 	pool := pg.NewDB(t)
 	err := NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
-		return queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.commit", Description: "d"})
+		return Queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.commit", Description: "d"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestWithinTxRollsBackOnError(t *testing.T) {
 	pool := pg.NewDB(t)
 	boom := errors.New("boom")
 	err := NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
-		if err := queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.rollback", Description: "d"}); err != nil {
+		if err := Queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.rollback", Description: "d"}); err != nil {
 			return err
 		}
 		return boom
@@ -87,7 +87,7 @@ func TestWithinTxRollsBackOnPanic(t *testing.T) {
 	func() {
 		defer func() { _ = recover() }()
 		_ = NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
-			_ = queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.panic", Description: "d"})
+			_ = Queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.panic", Description: "d"})
 			panic("oops")
 		})
 	}()
@@ -102,13 +102,13 @@ func TestQueriesJoinTheTransactionOfTheContext(t *testing.T) {
 	ctx := context.Background()
 	pool := pg.NewDB(t)
 	err := NewTxManager(pool).WithinTx(ctx, func(ctx context.Context) error {
-		if err := queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.visible", Description: "d"}); err != nil {
+		if err := Queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.visible", Description: "d"}); err != nil {
 			return err
 		}
-		if !permissionExists(t, ctx, queries(ctx, pool), "tx.visible") {
+		if !permissionExists(t, ctx, Queries(ctx, pool), "tx.visible") {
 			t.Error("a call inside the transaction must see its own write")
 		}
-		if permissionExists(t, context.Background(), queries(context.Background(), pool), "tx.visible") {
+		if permissionExists(t, context.Background(), Queries(context.Background(), pool), "tx.visible") {
 			t.Error("a call outside the transaction must not see an uncommitted row")
 		}
 		return nil
@@ -125,7 +125,7 @@ func TestWithinTxDoesNotNest(t *testing.T) {
 	boom := errors.New("boom")
 	err := tx.WithinTx(ctx, func(ctx context.Context) error {
 		inner := tx.WithinTx(ctx, func(ctx context.Context) error {
-			return queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.nested", Description: "d"})
+			return Queries(ctx, pool).UpsertPermission(ctx, sqlcgen.UpsertPermissionParams{Code: "tx.nested", Description: "d"})
 		})
 		if inner != nil {
 			return inner
@@ -148,11 +148,11 @@ func TestTranslateRealConstraintViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := pool.Exec(ctx, insert)
-	if err = translate(err); !shared.IsUnique(err) {
+	if err = Translate(err); !shared.IsUnique(err) {
 		t.Errorf("a duplicate row must be a unique violation, got %v", err)
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO role_permissions (role_code, permission_code) VALUES ('no_such_role', 'dup.code')`)
-	if err = translate(err); !shared.IsForeignKey(err) {
+	if err = Translate(err); !shared.IsForeignKey(err) {
 		t.Errorf("a missing parent must be a foreign key violation, got %v", err)
 	}
 }
