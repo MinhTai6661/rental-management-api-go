@@ -19,7 +19,7 @@ import (
 const maxBodyBytes = 1 << 20
 
 // Binder decodes and validates request bodies. Rules go in the `validate` struct tag and errors are reported under
-// the field's json name. Supported tags: required, email, min, max, oneof, uuid and accepted (a bool that is true).
+// the field's json name. Supported tags: required, email, min, max, oneof, uuid, unique and accepted (a bool that is true).
 type Binder struct {
 	validate *validator.Validate
 }
@@ -81,7 +81,7 @@ func (b *Binder) Struct(dst any) error {
 
 // fieldOf maps a validator tag to the rule key of the error catalog.
 func fieldOf(fe validator.FieldError) (apperr.Field, bool) {
-	name := fe.Field()
+	name := fieldPath(fe)
 	switch fe.Tag() {
 	case "required":
 		return apperr.Field{Name: name, Rule: apperr.RuleRequired}, true
@@ -91,6 +91,8 @@ func fieldOf(fe validator.FieldError) (apperr.Field, bool) {
 		return sizeField(name, fe, apperr.RuleMinString, apperr.RuleMinNumber, "min"), true
 	case "max":
 		return sizeField(name, fe, apperr.RuleMaxString, apperr.RuleMaxNumber, "max"), true
+	case "unique":
+		return apperr.Field{Name: name, Rule: apperr.RuleDistinct}, true
 	case "oneof":
 		return apperr.Field{Name: name, Rule: apperr.RuleOneOf}, true
 	case "uuid", "uuid4", "uuid7":
@@ -101,11 +103,30 @@ func fieldOf(fe validator.FieldError) (apperr.Field, bool) {
 	return apperr.Field{}, false
 }
 
-// sizeField picks the string rule (counts characters) or the number rule (compares the value).
+// fieldPath is the request path of the failed field: the validator namespace without its first segment (the struct
+// name), with "[2]" written as ".2" ("createRoomRequest.charges[2].name" -> "charges.2.name"). Flat fields keep
+// their plain json name.
+func fieldPath(fe validator.FieldError) string {
+	_, path, found := strings.Cut(fe.Namespace(), ".")
+	if !found {
+		return fe.Field()
+	}
+	path = strings.ReplaceAll(path, "[", ".")
+	return strings.ReplaceAll(path, "]", "")
+}
+
+// sizeField picks the rule by what is measured: the characters of a string, the items of a list, the value of a
+// number.
 func sizeField(name string, fe validator.FieldError, stringRule, numberRule, param string) apperr.Field {
 	rule := numberRule
-	if fe.Kind() == reflect.String {
+	switch fe.Kind() {
+	case reflect.String:
 		rule = stringRule
+	case reflect.Slice, reflect.Array:
+		rule = apperr.RuleMinItems
+		if param == "max" {
+			rule = apperr.RuleMaxItems
+		}
 	}
 	return apperr.Field{Name: name, Rule: rule, Params: map[string]string{param: fe.Param()}}
 }

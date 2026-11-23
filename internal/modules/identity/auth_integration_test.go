@@ -648,7 +648,7 @@ func TestSeedDemoIsIdempotentAndNeverMixesStaff(t *testing.T) {
 	e.exec(`INSERT INTO wards (code, province_code, name, administrative_level, slug) VALUES (26734, 79, 'Phường Bến Thành', 'ward', 'ben_thanh')`)
 
 	for i := 0; i < 2; i++ {
-		if err := SeedDemo(ctx, e.pool, "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
+		if _, err := SeedDemo(ctx, e.pool, "demo-password-123", "2026-11-03", e.clock.now()); err != nil {
 			t.Fatalf("seed %d: %v", i+1, err)
 		}
 	}

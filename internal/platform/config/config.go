@@ -71,6 +71,16 @@ type Config struct {
 	EmailVerificationTTL time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
 	EmailResendCooldown  time.Duration `env:"EMAIL_RESEND_COOLDOWN" envDefault:"60s"`
 
+	// Media: pictures of rooms and buildings. MediaDir is where the files live (a mounted volume in the container),
+	// MediaPublicBaseURL the absolute prefix of every picture URL the API returns.
+	MediaDir                   string `env:"MEDIA_DIR" envDefault:"var/media"`
+	MediaPublicBaseURL         string `env:"MEDIA_PUBLIC_BASE_URL" envDefault:"http://localhost:8090/v1/media"`
+	MediaMaxUploadBytes        int    `env:"MEDIA_MAX_UPLOAD_BYTES" envDefault:"2097152"`
+	MediaMaxDimension          int    `env:"MEDIA_MAX_DIMENSION" envDefault:"2048"`
+	MediaThumbnailMaxSize      int    `env:"MEDIA_THUMBNAIL_MAX_SIZE" envDefault:"480"`
+	MediaMaxPerOwner           int    `env:"MEDIA_MAX_PER_OWNER" envDefault:"10"`
+	ImageProcessingConcurrency int    `env:"IMAGE_PROCESSING_CONCURRENCY" envDefault:"2"`
+
 	// SeedDemoPassword is the password of the demo accounts `seed -demo` creates (development only).
 	SeedDemoPassword string `env:"SEED_DEMO_PASSWORD"`
 }
@@ -230,8 +240,45 @@ func (c Config) validateBackends() error {
 	if c.HasJWTSecret() && len(c.JWTSecret) < minJWTSecretBytes {
 		return fmt.Errorf("JWT_SECRET must be at least %d bytes, got %d", minJWTSecretBytes, len(c.JWTSecret))
 	}
+	if err := c.validateMedia(); err != nil {
+		return err
+	}
 	if c.SeedDemoPassword != "" && len(c.SeedDemoPassword) < minSeedPasswordBytes {
 		return fmt.Errorf("SEED_DEMO_PASSWORD must be at least %d characters", minSeedPasswordBytes)
+	}
+	return nil
+}
+
+// validateMedia checks the picture settings.
+func (c Config) validateMedia() error {
+	if strings.TrimSpace(c.MediaDir) == "" {
+		return fmt.Errorf("MEDIA_DIR must not be empty")
+	}
+	if err := checkBaseURL(c.MediaPublicBaseURL); err != nil {
+		return fmt.Errorf("MEDIA_PUBLIC_BASE_URL: %w", err)
+	}
+	for name, n := range map[string]int{
+		"MEDIA_MAX_UPLOAD_BYTES":       c.MediaMaxUploadBytes,
+		"MEDIA_MAX_DIMENSION":          c.MediaMaxDimension,
+		"MEDIA_THUMBNAIL_MAX_SIZE":     c.MediaThumbnailMaxSize,
+		"MEDIA_MAX_PER_OWNER":          c.MediaMaxPerOwner,
+		"IMAGE_PROCESSING_CONCURRENCY": c.ImageProcessingConcurrency,
+	} {
+		if n <= 0 {
+			return fmt.Errorf("%s must be positive, got %d", name, n)
+		}
+	}
+	return nil
+}
+
+// checkBaseURL requires an absolute http(s) URL with no query and no trailing slash; a path is allowed.
+func checkBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%q is not an absolute http(s) URL like http://localhost:8090/v1/media", raw)
+	}
+	if strings.HasSuffix(raw, "/") {
+		return fmt.Errorf("%q must not end with a slash", raw)
 	}
 	return nil
 }

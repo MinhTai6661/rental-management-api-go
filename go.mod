@@ -18,6 +18,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.45.0
 	github.com/wneessen/go-mail v0.8.2
 	golang.org/x/crypto v0.58.0
+	golang.org/x/image v0.48.0
 	golang.org/x/text v0.44.0
 )
 

@@ -19,12 +19,15 @@ import (
 
 	"rental-management/internal/modules/identity"
 	"rental-management/internal/modules/location"
+	"rental-management/internal/modules/property"
 	"rental-management/internal/platform/config"
 	"rental-management/internal/platform/db"
 	"rental-management/internal/platform/i18n"
+	"rental-management/internal/platform/imaging"
 	"rental-management/internal/platform/logger"
 	"rental-management/internal/platform/mail"
 	"rental-management/internal/platform/ratelimit"
+	"rental-management/internal/platform/storage"
 )
 
 // RunAPI serves the HTTP API until ctx is cancelled, then drains in-flight requests.
@@ -70,6 +73,12 @@ func RunAPI(ctx context.Context) error {
 		return err
 	}
 
+	files, err := storage.NewLocalDisk(cfg.MediaDir, cfg.MediaPublicBaseURL)
+	if err != nil {
+		return err
+	}
+	properties := newProperty(cfg, log, pool, files)
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: NewRouter(Deps{
@@ -83,6 +92,7 @@ func RunAPI(ctx context.Context) error {
 					Limiter: limiter, Limit: location.DefaultLimit, Window: location.DefaultWindow,
 				}),
 				identity.Mount(auth, identity.RouteOptions{Limiter: limiter}),
+				property.Mount(properties, property.RouteOptions{Auth: auth, Limiter: limiter}),
 			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -143,6 +153,22 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 		ResendCooldown:     cfg.EmailResendCooldown,
 		RevokedFor:         cfg.AccessTokenTTL + cfg.JWTLeeway,
 		PermissionCacheTTL: cfg.PermissionCacheTTL,
+	})
+}
+
+// newProperty builds the buildings and rooms service. The plan, guard and observer ports keep their defaults
+// (nothing limited, nothing blocking, nobody listening) until the modules that own them are wired here.
+func newProperty(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage) *property.Service {
+	return property.NewService(property.Deps{
+		Store:   property.NewStore(pool),
+		Storage: files,
+		Images: imaging.NewProcessor(imaging.Limits{
+			MaxBytes: cfg.MediaMaxUploadBytes, MaxDimension: cfg.MediaMaxDimension, ThumbMaxSize: cfg.MediaThumbnailMaxSize,
+		}, cfg.ImageProcessingConcurrency),
+		Log: log,
+		Now: time.Now,
+	}, property.Options{
+		MaxMediaPerOwner: cfg.MediaMaxPerOwner, MaxUploadBytes: cfg.MediaMaxUploadBytes, MaxDimension: cfg.MediaMaxDimension,
 	})
 }
 

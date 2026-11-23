@@ -21,43 +21,67 @@ const (
 	KindValidation
 	KindRateLimited
 	KindBusy
+	KindConflict
 )
 
 // Error codes: stable machine-readable keys the web app can switch on. Each has a message under
 // "errors.<code>" in every locale file.
 const (
-	CodeValidationFailed    = "validation.failed"
-	CodeRequestMalformed    = "request.malformed"
-	CodeRequestTooLarge     = "request.too_large"
-	CodeRequestRateLimited  = "request.rate_limited"
-	CodeUnauthenticated     = "auth.unauthenticated"
-	CodeInvalidCredentials  = "auth.invalid_credentials" //nolint:gosec // an error code, not a credential
-	CodeRefreshInvalid      = "auth.refresh_invalid"
-	CodeAccountInactive     = "auth.account_inactive"
-	CodeEmailUnverified     = "auth.email_unverified"
-	CodeVerificationInvalid = "auth.verification_invalid"
-	CodeForbidden           = "auth.forbidden"
-	CodeProvinceNotFound    = "location.province_not_found"
-	CodeResourceNotFound    = "resource.not_found"
-	CodeRouteNotFound       = "http.route_not_found"
-	CodeMethodNotAllowed    = "http.method_not_allowed"
-	CodeServerBusy          = "server.busy"
-	CodeServerInternal      = "server.internal"
-	RuleRequired            = "required"
-	RuleEmail               = "email"
-	RuleMinString           = "min_string"
-	RuleMaxString           = "max_string"
-	RuleMinNumber           = "min_number"
-	RuleMaxNumber           = "max_number"
-	RuleInteger             = "integer"
-	RuleUUID                = "uuid"
-	RuleOneOf               = "oneof"
-	RuleAccepted            = "accepted"
-	RuleUnique              = "unique"
-	RuleExists              = "exists"
-	RuleRoleNotHeld         = "role_not_held"
-	RulePasswordIncorrect   = "password_incorrect"
-	RulePasswordSame        = "password_same"
+	CodeValidationFailed     = "validation.failed"
+	CodeRequestMalformed     = "request.malformed"
+	CodeRequestTooLarge      = "request.too_large"
+	CodeRequestRateLimited   = "request.rate_limited"
+	CodeUnauthenticated      = "auth.unauthenticated"
+	CodeInvalidCredentials   = "auth.invalid_credentials" //nolint:gosec // an error code, not a credential
+	CodeRefreshInvalid       = "auth.refresh_invalid"
+	CodeAccountInactive      = "auth.account_inactive"
+	CodeEmailUnverified      = "auth.email_unverified"
+	CodeVerificationInvalid  = "auth.verification_invalid"
+	CodeForbidden            = "auth.forbidden"
+	CodeProvinceNotFound     = "location.province_not_found"
+	CodeResourceNotFound     = "resource.not_found"
+	CodeRouteNotFound        = "http.route_not_found"
+	CodeMethodNotAllowed     = "http.method_not_allowed"
+	CodeServerBusy           = "server.busy"
+	CodeBuildingHasRooms     = "property.building_has_rooms"
+	CodeRoomHasContract      = "property.room_has_active_contract"
+	CodeRoomHasListing       = "property.room_has_open_listing"
+	CodeRoomStatusLocked     = "property.room_status_locked"
+	CodeMediaLimitReached    = "property.media_limit_reached"
+	CodeBuildingLimit        = "plan.building_limit_reached"
+	CodeRoomLimit            = "plan.room_limit_reached"
+	CodeServerInternal       = "server.internal"
+	RuleRequired             = "required"
+	RuleEmail                = "email"
+	RuleMinString            = "min_string"
+	RuleMaxString            = "max_string"
+	RuleMinNumber            = "min_number"
+	RuleMaxNumber            = "max_number"
+	RuleInteger              = "integer"
+	RuleUUID                 = "uuid"
+	RuleOneOf                = "oneof"
+	RuleAccepted             = "accepted"
+	RuleUnique               = "unique"
+	RuleExists               = "exists"
+	RuleRoleNotHeld          = "role_not_held"
+	RulePasswordIncorrect    = "password_incorrect"
+	RulePasswordSame         = "password_same"
+	RuleMinItems             = "min_items"
+	RuleMaxItems             = "max_items"
+	RuleDistinct             = "distinct"
+	RuleImageType            = "image_type"
+	RuleImageDimensions      = "image_dimensions"
+	RuleImageCorrupt         = "image_corrupt"
+	RuleFileTooLarge         = "file_too_large"
+	RuleBuildingPriceMissing = "building_price_missing"
+	RuleBuildingPriceInUse   = "building_price_in_use"
+	RuleRangeInvalid         = "range_invalid"
+	RuleRangeTooMany         = "range_too_many"
+	RuleRangeNameTooLong     = "range_name_too_long"
+	RuleNamesTaken           = "names_taken"
+	RuleSingleCover          = "single_cover"
+	RuleRentalPeriodPair     = "rental_period_pair"
+	RuleLTEField             = "lte_field"
 )
 
 // Codes lists every error code; each needs a translation under "errors.<code>".
@@ -66,7 +90,8 @@ func Codes() []string {
 		CodeValidationFailed, CodeRequestMalformed, CodeRequestTooLarge, CodeRequestRateLimited,
 		CodeUnauthenticated, CodeInvalidCredentials, CodeRefreshInvalid, CodeAccountInactive, CodeForbidden,
 		CodeEmailUnverified, CodeVerificationInvalid, CodeProvinceNotFound, CodeResourceNotFound, CodeRouteNotFound, CodeMethodNotAllowed,
-		CodeServerBusy, CodeServerInternal,
+		CodeServerBusy, CodeServerInternal, CodeBuildingHasRooms, CodeRoomHasContract, CodeRoomHasListing,
+		CodeRoomStatusLocked, CodeMediaLimitReached, CodeBuildingLimit, CodeRoomLimit,
 	}
 }
 
@@ -75,7 +100,9 @@ func Rules() []string {
 	return []string{
 		RuleRequired, RuleEmail, RuleMinString, RuleMaxString, RuleMinNumber, RuleMaxNumber, RuleInteger,
 		RuleUUID, RuleOneOf, RuleAccepted, RuleUnique, RuleExists, RuleRoleNotHeld, RulePasswordIncorrect,
-		RulePasswordSame,
+		RulePasswordSame, RuleMinItems, RuleMaxItems, RuleDistinct, RuleImageType, RuleImageDimensions,
+		RuleImageCorrupt, RuleFileTooLarge, RuleBuildingPriceMissing, RuleBuildingPriceInUse, RuleRangeInvalid,
+		RuleRangeTooMany, RuleRangeNameTooLong, RuleNamesTaken, RuleSingleCover, RuleRentalPeriodPair, RuleLTEField,
 	}
 }
 
@@ -102,6 +129,9 @@ type Error struct {
 
 // E builds an error of the given kind and code.
 func E(kind Kind, code string) *Error { return &Error{Kind: kind, Code: code} }
+
+// Conflict reports a request that is well-formed but clashes with the current state (HTTP 409).
+func Conflict(code string) *Error { return E(KindConflict, code) }
 
 // Invalid reports failed validation rules (HTTP 422).
 func Invalid(fields ...Field) *Error {

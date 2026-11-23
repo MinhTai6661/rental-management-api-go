@@ -36,6 +36,47 @@ func TestParseDefaultsNeedNoBackends(t *testing.T) {
 	}
 }
 
+func TestMediaDefaults(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MediaDir != "var/media" || cfg.MediaPublicBaseURL != "http://localhost:8090/v1/media" ||
+		cfg.MediaMaxUploadBytes != 2097152 || cfg.MediaMaxDimension != 2048 || cfg.MediaThumbnailMaxSize != 480 ||
+		cfg.MediaMaxPerOwner != 10 || cfg.ImageProcessingConcurrency != 2 {
+		t.Errorf("unexpected media defaults: %+v", cfg)
+	}
+}
+
+func TestMediaRejectsInvalidValues(t *testing.T) {
+	cases := map[string]map[string]string{
+		"relative base url":   {"MEDIA_PUBLIC_BASE_URL": "/v1/media"},
+		"ftp base url":        {"MEDIA_PUBLIC_BASE_URL": "ftp://cdn.example/media"},
+		"trailing slash":      {"MEDIA_PUBLIC_BASE_URL": "http://localhost:8090/v1/media/"},
+		"base url with query": {"MEDIA_PUBLIC_BASE_URL": "http://localhost:8090/v1/media?x=1"},
+		"empty dir":           {"MEDIA_DIR": ""},
+		"zero upload":         {"MEDIA_MAX_UPLOAD_BYTES": "0"},
+		"zero dimension":      {"MEDIA_MAX_DIMENSION": "0"},
+		"negative thumbnail":  {"MEDIA_THUMBNAIL_MAX_SIZE": "-1"},
+		"zero per owner":      {"MEDIA_MAX_PER_OWNER": "0"},
+		"zero concurrency":    {"IMAGE_PROCESSING_CONCURRENCY": "0"},
+	}
+	for name, vars := range cases {
+		t.Run(name, func(t *testing.T) {
+			// An empty value falls back to the default, so the empty-dir case needs the dir to be a blank string.
+			if name == "empty dir" {
+				vars = map[string]string{"MEDIA_DIR": " "}
+			}
+			if _, err := parse(vars); err == nil {
+				t.Errorf("expected an error for %v", vars)
+			}
+		})
+	}
+	if _, err := parse(map[string]string{"MEDIA_PUBLIC_BASE_URL": "https://cdn.example.com/media"}); err != nil {
+		t.Errorf("a valid https base url was refused: %v", err)
+	}
+}
+
 func TestParseOverrides(t *testing.T) {
 	cfg, err := parse(map[string]string{
 		"APP_ENV":              "production",

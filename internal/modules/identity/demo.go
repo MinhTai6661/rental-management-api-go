@@ -33,15 +33,16 @@ func DemoAccounts() []DemoAccount {
 	}
 }
 
-// SeedDemo creates (or refreshes) the demo accounts with the password. Their emails count as verified, so they can
+// SeedDemo creates (or refreshes) the demo accounts with the password and returns their user ids by email. Their emails count as verified, so they can
 // log in at once. It is safe to repeat: a second run keeps the accounts and sets the password again. The roles and
 // provinces must be seeded first (roles are referenced, the ward is taken from the seeded divisions).
-func SeedDemo(ctx context.Context, pool *pgxpool.Pool, password, termsVersion string, now time.Time) error {
+func SeedDemo(ctx context.Context, pool *pgxpool.Pool, password, termsVersion string, now time.Time) (map[string]uuid.UUID, error) {
 	hash, err := HashPassword(password)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return NewStore(pool).InTx(ctx, func(q *sqlcgen.Queries) error {
+	ids := make(map[string]uuid.UUID, len(DemoAccounts()))
+	err = NewStore(pool).InTx(ctx, func(q *sqlcgen.Queries) error {
 		var ward *int32
 		if code, err := q.FirstWardCode(ctx); err == nil {
 			ward = &code
@@ -69,7 +70,9 @@ func SeedDemo(ctx context.Context, pool *pgxpool.Pool, password, termsVersion st
 			if err := assignRoles(ctx, q, userID, account.Roles, now); err != nil {
 				return fmt.Errorf("seed demo roles of %s: %w", account.Email, err)
 			}
+			ids[account.Email] = userID
 		}
 		return nil
 	})
+	return ids, err
 }

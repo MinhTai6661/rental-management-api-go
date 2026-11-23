@@ -11,8 +11,11 @@ import (
 
 	"rental-management/internal/modules/identity"
 	"rental-management/internal/modules/location"
+	"rental-management/internal/modules/property"
 	"rental-management/internal/platform/config"
 	"rental-management/internal/platform/db"
+	"rental-management/internal/platform/logger"
+	"rental-management/internal/platform/storage"
 )
 
 // RunMigrate runs `rental-management migrate [up|down|status]` (up by default).
@@ -67,10 +70,22 @@ func RunSeed(ctx context.Context, args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "seeded provinces and wards")
 	if *demo {
-		if err := identity.SeedDemo(ctx, pool, cfg.SeedDemoPassword, cfg.TermsVersion, time.Now()); err != nil {
+		ids, err := identity.SeedDemo(ctx, pool, cfg.SeedDemoPassword, cfg.TermsVersion, time.Now())
+		if err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(identity.DemoAccounts()))
+
+		log, err := logger.New(io.Discard, cfg.LogLevel, cfg.LogFormat)
+		if err != nil {
+			return err
+		}
+		// The seed stores no pictures, so it gets an in-memory store instead of touching the media directory.
+		properties := newProperty(cfg, log, pool, storage.NewMemory(cfg.MediaPublicBaseURL))
+		if err := property.SeedDemo(ctx, properties, ids["landlord@rental.test"]); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(out, "seeded the demo property data")
 	}
 	return nil
 }

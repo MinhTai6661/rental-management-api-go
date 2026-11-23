@@ -77,6 +77,11 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `SMTP_HOST` | - | empty = emails are only logged. **Required when `APP_ENV=production`**: otherwise the log would hold verification links |
 | `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` | `1025` / - / - | |
 | `SMTP_FROM` | `Rental Management <no-reply@rental.test>` | |
+| `MEDIA_DIR` | `var/media` | where picture files live (compose: volume at `/data/media`) |
+| `MEDIA_PUBLIC_BASE_URL` | `http://localhost:8090/v1/media` | absolute prefix of every picture URL in responses; no trailing slash |
+| `MEDIA_MAX_UPLOAD_BYTES` / `MEDIA_MAX_DIMENSION` / `MEDIA_THUMBNAIL_MAX_SIZE` | `2097152` / `2048` / `480` | file bytes, longest side and thumbnail longest side (px) |
+| `MEDIA_MAX_PER_OWNER` | `10` | pictures per room or building when the plan sets no limit |
+| `IMAGE_PROCESSING_CONCURRENCY` | `2` | pictures decoded at the same time |
 | `SEED_DEMO_PASSWORD` | - | password of the `seed -demo` accounts; the command refuses to run in production |
 
 ## Layout and dependency rules
@@ -92,6 +97,7 @@ internal/
   modules/                    BUSINESS: one directory per feature, each with routes, handler, service, store, rules
     identity/                 accounts, sessions, tokens, passwords, email verification, role/permission catalog + seed
     location/                 provinces and wards (public, rate limited, cacheable)
+    property/                 buildings, rooms, charges and pictures (upload, cover, arrangement, public serving); one module because a building edit reaches its rooms in one transaction
   platform/                   INFRASTRUCTURE shared by every module; no business rules
     config/                   environment -> validated Config
     httpx/                    envelope, errors, pagination, validation, middleware, CORS, auth and rate-limit middleware
@@ -117,7 +123,7 @@ Rules (checked in review and by the linters):
 - A module never imports another module's `sqlcgen`.
 - Pure business rules (calculations, state machines) live in small, DB-free functions with table tests.
 
-## API (phase 1)
+## API
 
 Routes live under `/v1`, plus `/healthz` and `/readyz`. Send `Accept-Language: vi|en` (default `vi`). Browsers call
 the API cross-origin (see `CORS_ALLOWED_ORIGINS`); tokens travel in `Authorization: Bearer <access_token>` and in
@@ -176,6 +182,123 @@ Validation error (422) and a paginated list:
 {"data": [], "meta": {"page": 2, "per_page": 20, "total": 135}}
 ```
 
+### Buildings (landlord)
+
+A building groups the rooms of one landlord at the same address and holds what its rooms start from (rent, area, rental
+period, description, charges). All routes need the landlord role (a landlord acting as tenant gets 403) and the
+`buildings.*` permission; every query is scoped to the caller, so another landlord's building (or an id that does not
+parse) is a 404, never a 403. `PUT` is a full replacement: a field that is absent or `null` means "no value"; only
+`charges` is tri-state (absent keeps the charges, `[]` removes them, a list syncs them by `id`: a known id updates in
+place, anything else is created, the unlisted are deleted).
+
+| Method and path | Permission | Success |
+|---|---|---|
+| `GET /v1/buildings` (`name`, `ward_code`, `province_code`, `sort=name\|-name\|created_at\|-created_at\|display_order`, `page`, `per_page`) | `buildings.view` | 200 list with `meta` and `rooms_count`, `available_rooms_count` |
+| `POST /v1/buildings` | `buildings.create` | 201 detail (409 `plan.building_limit_reached`) |
+| `GET /v1/buildings/{id}` | `buildings.view` | 200 detail with `charges` and `media` |
+| `PUT /v1/buildings/{id}` | `buildings.update` | 200 detail |
+| `DELETE /v1/buildings/{id}` | `buildings.delete` | 204; 409 `property.building_has_rooms` while it holds live rooms |
+| `POST /v1/buildings/bulk-delete` `{ids}` | `buildings.delete` | 200 `{done:[ids], failed:[{id,name,code,message}]}`; an id that is not yours is a 422 on `ids` |
+| `PUT /v1/buildings/order` `{ids}` | `buildings.update` | 204; the listed buildings swap into the slots they held |
+| `POST /v1/buildings/{id}/copy` `{name, include_rooms}` | `buildings.create` | 201 `{building, rooms_copied}`: details and charges, and with `include_rooms` the rooms too (same names, values and inheritance, empty: `available`, or `maintenance` as before; no tenants, contracts, listings or managers; 409 `plan.room_limit_reached`). Pictures are duplicated too (new files) |
+| `POST /v1/buildings/{id}/rooms` | `rooms.create` | 201 `{ids, count}`: a run of rooms (see below) |
+
+```json
+POST /v1/buildings
+{"name": "Nhà trọ Demo", "ward_code": 4, "address_detail": "12 Lê Lợi", "price_vnd": 2500000,
+ "area_square_meters": 20, "minimum_rental_period": 1, "rental_period_unit": "month",
+ "charges": [{"name": "Điện", "kind": "electricity", "amount_vnd": 3500, "unit": "per_kwh"}]}
+```
+
+Names are unique per landlord whatever the case (a deleted building frees its name, 422 `name` `unique`); money is whole
+VND (`price_vnd`, `amount_vnd`); the area keeps two decimals; `minimum_rental_period` and `rental_period_unit`
+(`month|day`) come together or not at all. Charge `kind`: `service electricity water internet parking cleaning other`;
+`unit`: `per_period per_person per_kwh per_cubic_meter one_time`; at most 30 charges, error fields are named by path
+(`charges.0.name`). The demo seed (`make seed-demo`) gives `landlord@rental.test` the building "Nhà trọ Demo" with the
+rooms P101 to P105 (follow the building), P106 (own rent) and A1 (outside any building, `maintenance`); it is safe to repeat.
+
+Editing a building pushes what changed into its rooms in the same transaction: the address into every room, rent, area,
+rental period and description into the rooms that follow them (a removed rent or rental period is not pushed, and the
+rent cannot be removed while a room follows it: 422 `price_vnd` `building_price_in_use`), and a changed charge list into
+the rooms that follow the charges (a charge copy keeps its id, copies of dropped charges are removed, new ones are added).
+
+A run of rooms: `POST /v1/buildings/{id}/rooms {"name_prefix": "P", "from": 101, "to": 105, "padding": 0, "status":
+"available"}` creates `P101..P105` (at most 100 per run, names up to 50 characters, `padding` zero-pads the number).
+Values the request carries (`price_vnd`, `area_square_meters`, `minimum_rental_period` + `rental_period_unit`,
+`description`, a non-empty `charges`) are the rooms' own; the rest follow the building. A range problem is a 422 on
+`name_prefix`; if any name is already used in the building nothing is created (422 `name_prefix` `names_taken`).
+
+### Rooms (landlord)
+
+Same access rules as buildings (landlord role, `rooms.*` permission, other landlords' rooms are a 404). A room lives in a
+building or on its own. A room in a building follows its parts (`price`, `area`, `rental_period`, `description`,
+`charges`, `media`): the response lists them in `inherits`, and the room columns always hold the value in force. A part
+follows the building when it is listed in `inherit` (request body, e.g. `"inherit": ["price", "media"]`; `[]` = none), or,
+with no `inherit`, when the request carries no value of its own for it. On update, charges left out of the body and the
+room's own pictures count as carried, so a `PUT` never drops them: to follow again, list the part in `inherit`. A room in a
+building takes its address from the building; a room outside any building needs its own `address_detail` and
+`price_vnd`. `PUT` is a full replacement of the scalar fields (an absent `status` keeps the current one); `charges`
+is tri-state as for buildings. Room names are unique per building (case-insensitive; rooms outside any building form one
+group; a deleted room frees its name).
+
+| Method and path | Permission | Success |
+|---|---|---|
+| `GET /v1/rooms` (`name`, `status`, `building_id`, `no_building=true`, `ward_code`, `province_code`, `price_from`, `price_to`, `area_from`, `area_to`, `sort=display_order\|name\|-name\|price\|-price\|area\|-area\|created_at\|-created_at`, `page`, `per_page`) | `rooms.view` | 200 list with `meta`; an end below its start is a 422 on the start (`lte_field`) |
+| `POST /v1/rooms` | `rooms.create` | 201 detail (409 `plan.room_limit_reached`) |
+| `GET /v1/rooms/{id}` | `rooms.view` | 200 detail: `description`, `charges`, `media` (the building's pictures while the room follows them) |
+| `PUT /v1/rooms/{id}` | `rooms.update` | 200 detail; 409 `property.room_status_locked` when a running contract keeps it rented |
+| `DELETE /v1/rooms/{id}` | `rooms.delete` | 204 (soft delete); 409 `property.room_has_active_contract` / `property.room_has_open_listing` |
+| `POST /v1/rooms/bulk-delete` `{ids}` | `rooms.delete` | 200 `{done, failed}`, refused rooms named with their `code`; an id that is not yours is a 422 on `ids` |
+| `POST /v1/rooms/bulk-status` `{ids, status}` | `rooms.update` | 200 `{done, failed}`; rooms already in that status count as done |
+| `PUT /v1/rooms/order` `{ids}` | `rooms.update` | 204; the listed rooms swap into the slots they held |
+
+```json
+POST /v1/rooms
+{"building_id": "01936a3e-...", "name": "P101", "price_vnd": 3000000, "status": "available"}
+```
+Status values: `available`, `rented`, `maintenance`. What blocks a room (running contract, open listing) and who must be told
+about changes (blank contracts, listings back to draft) are ports with no-op defaults (`RoomGuards`, `RoomObserver`) wired
+in `internal/app` when the contract and listing modules arrive.
+
+### Pictures (landlord) and serving
+
+Rooms and buildings have pictures; the two behave the same. Routes need the landlord role and `rooms.update` (rooms) or
+`buildings.update` (buildings); a stranger's room, building or picture id is a 404, and the ownership is checked before
+the image is even decoded. Uploads are `multipart/form-data` with the file in the part `file` and an optional text part
+`kind` (`photo`, the default, or `cover`); the upload routes are rate limited (60/min per address).
+
+| Method and path | Success |
+|---|---|
+| `POST /v1/rooms/{id}/media`, `POST /v1/buildings/{id}/media` | 201 the picture `{id, kind, url, thumb_url, content_type, width, height, size_bytes, original_name, display_order}`; 409 `property.media_limit_reached` (`max`: the plan's limit, else `MEDIA_MAX_PER_OWNER`) |
+| `PUT /v1/rooms/{id}/media`, `PUT /v1/buildings/{id}/media` `{"items": [{"id", "kind"}]}` | 200 the pictures in the new order: every picture once, at most one `cover` (422 `items` `exists` / `single_cover`) |
+| `PUT /v1/rooms/{id}/media/{media_id}/file`, `PUT /v1/buildings/{id}/media/{media_id}/file` | 200; the file is replaced under **new keys** (place and kind kept) and the old files are deleted |
+| `DELETE /v1/rooms/{id}/media/{media_id}`, `DELETE /v1/buildings/{id}/media/{media_id}` | 204; positions close up, the cover moves on, the files are deleted |
+| `GET /v1/media/{key}` (also `HEAD`; public, no bearer) | 200 the bytes; 304 when `If-None-Match` matches; 404 for an unknown or invalid key |
+
+What the server accepts is checked from the bytes (never the client's content type or file name): WebP, JPEG or PNG, at
+most `MEDIA_MAX_UPLOAD_BYTES` (2 MiB) and `MEDIA_MAX_DIMENSION` (2048) pixels on the longest side, checked from the image
+header before any pixel is decoded (decompression bombs); animated WebP is refused. Refusals are a 422 on `file`:
+`image_type`, `image_dimensions`, `image_corrupt`, `file_too_large` (a body far over the limit is 413). WebP is stored as
+uploaded with EXIF/XMP removed; JPEG and PNG are re-encoded as JPEG (metadata dropped, alpha on white). Every picture has
+a 480 px JPEG thumbnail made at upload time.
+
+Files are written to storage before the database transaction and deleted again if it fails; files that are no longer
+referenced (a deleted or replaced picture, a deleted building) are removed after the commit. The cover (`cover` kind, else
+the first picture) is kept on the room or building (`cover.url`, `cover.thumb_url`) so lists never read the pictures.
+
+Inheritance: a room that follows its building's `media` shows the building's pictures and cover (`GET /v1/rooms/{id}` lists
+them under `media`; the room has none of its own). A change of the building's pictures updates the cover of every
+following room. A room that uploads a picture of its own **stops following** (its `inherits` loses `media`); putting
+`media` back in `inherit` drops its own pictures. Copying a building duplicates the files under new keys (a delete in the
+copy never touches the source): the building's pictures, and the pictures of the rooms that have their own; rooms that
+follow show the new building's.
+
+Serving: `GET /v1/media/property/2026/11/<32 hex>.webp` (the URLs in responses are `MEDIA_PUBLIC_BASE_URL` + key). The names
+are random and never reused, so the response is `Cache-Control: public, max-age=31536000, immutable` with an `ETag` (the
+file name), `Cross-Origin-Resource-Policy: cross-origin`, `Content-Security-Policy: default-src 'none'` and
+`X-Content-Type-Options: nosniff`; the route is not rate limited. Anyone with the URL can fetch the picture (an `<img>`
+tag cannot send a bearer token); payment proofs, later, will use signed URLs, not this route.
+
 ### Error codes
 
 Each code has a vi and en message (`errors.<code>`); a test fails if a code or a validation rule has no translation or
@@ -197,12 +320,22 @@ the two locale files differ.
 | `location.province_not_found` | 404 | unknown province code |
 | `resource.not_found` | 404 | generic not found |
 | `http.route_not_found` / `http.method_not_allowed` | 404 / 405 | unknown route / wrong method (`Allow` header set) |
+| `property.building_has_rooms` | 409 | deleting a building that still has rooms (`count`) |
+| `property.room_has_active_contract` / `property.room_has_open_listing` | 409 | deleting a room with a running contract / a listing under review or published |
+| `property.room_status_locked` | 409 | a room with a running contract must stay `rented` |
+| `property.media_limit_reached` | 409 | too many pictures on a room or building (`max`) |
+| `plan.building_limit_reached` / `plan.room_limit_reached` | 409 | the plan's building / room limit (`limit`) |
 | `server.busy` | 503 | statement/lock timeout, request deadline, Redis or database down |
 | `server.internal` | 500 | anything else (the cause is only logged) |
 
 Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `max_string`, `min_number`,
 `max_number`, `integer`, `uuid`, `oneof`, `accepted`, `unique`, `exists`, `role_not_held`, `password_incorrect`,
-`password_same`.
+`password_same`, `min_items`, `max_items`, `distinct`, `image_type`, `image_dimensions`, `image_corrupt`,
+`file_too_large`, `building_price_missing`, `building_price_in_use`, `range_invalid`, `range_too_many`,
+`range_name_too_long`, `names_taken`, `single_cover`, `rental_period_pair`, `lte_field`.
+
+Field names in `fields` are paths: a nested field is `charges.2.name` (list items are numbered from 0).
+A state conflict (the request is fine but clashes with the current data) is 409, a bad field is 422.
 
 ## Auth model
 
@@ -276,7 +409,11 @@ Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `
 
 ## Roadmap
 
-Later phases (each module: migration, queries, service, handlers, tests): `building`, `room`, `listing`, `contract`,
+Done: phase 2, `property` (schema; buildings and rooms API with inheritance, propagation, runs, copy, bulk, reorder, the
+demo seed; pictures with upload, cover, arrangement, replace, delete, inheritance, copy and public serving).
+Next: `contract` (phase 3: blank contracts open and close through the `RoomObserver`/`RoomGuards` ports).
+
+Later phases (each module: migration, queries, service, handlers, tests): `listing`, `contract`,
 `invoice`, `payment`, `notification` (announcements, popups), `report`, `plan` (subscriptions), `stats`, `audit`, plus
 admin user management, landlord applications, manager hand-over and invitations, and social login.
 
@@ -286,7 +423,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 |---|---|
 | Billing: `BillingPeriodCalculator`, `InvoiceCalculator`, `ServiceCharge`, `RoomBillSummary`, `PaymentLabel`, `BillingRuleViolation` | `internal/invoice` (`PaymentLabel` -> `internal/payment`) |
 | Contract: `ContractLifecycle`, `MinimumRentalPeriod` | `internal/contract` |
-| Building: `RoomNameRange`, `RoomInheritance` | `internal/building`, `internal/room` |
+| Building: `RoomNameRange`, `RoomInheritance` | `internal/modules/property` (`rules.go`, ported and tested) |
 | Listing: `ListingLifecycle` | `internal/listing` |
 | Manager: `ManagerCapability`, `ManagerEligibility` | `internal/manager` |
 | Plan: `PlanAssignment`, `PlanLimit` | `internal/plan` |
@@ -298,7 +435,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Legal: `RichText` | `internal/legal` |
 | Support: `RoleAccess` | `internal/platform/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
 
-Route skeleton for later phases (all under `/v1`): landlord `/buildings`, `/buildings/{id}/rooms`, `/rooms/{id}`,
+Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/rooms`, `/rooms/{id}`,
 `/listings`, `/contracts`, `/invoices`, `/invoices/{id}/payments`, `/payment-methods`, `/managers`; account
 `/me/contracts`, `/me/invoices`, `/me/notifications`, `/me/subscription`; public `/public/rooms`; admin
 `/admin/users`, `/admin/landlord-applications`, `/admin/plans`, `/admin/subscriptions`, `/admin/announcements`,
@@ -315,6 +452,17 @@ new logout-all, change-password, verify/resend email), list pages (a `meta.page`
 as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
+
+- **Rooms (property)**: the plan, room-guard and room-observer ports have no-op defaults until the plan and contract
+  modules are wired in `internal/app`; deleting a room does not tell the observer (phase 3 will add what it needs).
+  Room pictures stay in storage when the room is soft-deleted (history); orphaned files from a crash between the
+  storage write and the commit are not swept (no background job yet). Copying a building with many rooms that have
+  their own pictures duplicates every file before the transaction, so it can take a while.
+
+- **Pictures (property phase, platform part)**: Go has no WebP encoder and we take no cgo/WASM one, so a JPEG or PNG
+  upload is stored as JPEG (metadata removed), while WebP (what the web sends) is stored as uploaded with its EXIF and
+  XMP chunks removed. The EXIF orientation of a directly uploaded JPEG is not applied (the web always sends an upright
+  WebP). Thumbnails are JPEG, made at upload time without a queue.
 
 - **Rehash on login** is not implemented: if the argon2 parameters change, old hashes stay until the password changes.
 - No rate limit per *account* on password change (only per client address, 5/min).

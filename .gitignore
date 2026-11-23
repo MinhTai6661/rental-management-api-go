@@ -1,6 +1,7 @@
 # Build output and local files
 /bin/
 /tmp/
+/var/
 .env
 .env.*
 !.env.example

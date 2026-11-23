@@ -33,6 +33,8 @@ linters:
           deny:
             - pkg: rental-management/internal/modules/location
               desc: modules must not import other modules
+            - pkg: rental-management/internal/modules/property
+              desc: modules must not import other modules
             - pkg: rental-management/internal/app
               desc: modules must not import the wiring layer
         location-is-isolated:
@@ -40,6 +42,18 @@ linters:
             - "**/internal/modules/location/**"
           deny:
             - pkg: rental-management/internal/modules/identity
+              desc: modules must not import other modules
+            - pkg: rental-management/internal/modules/property
+              desc: modules must not import other modules
+            - pkg: rental-management/internal/app
+              desc: modules must not import the wiring layer
+        property-is-isolated:
+          files:
+            - "**/internal/modules/property/**"
+          deny:
+            - pkg: rental-management/internal/modules/identity
+              desc: modules must not import other modules
+            - pkg: rental-management/internal/modules/location
               desc: modules must not import other modules
             - pkg: rental-management/internal/app
               desc: modules must not import the wiring layer

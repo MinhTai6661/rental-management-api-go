@@ -84,6 +84,8 @@ func statusOf(kind apperr.Kind) int {
 		return http.StatusTooManyRequests
 	case apperr.KindBusy:
 		return http.StatusServiceUnavailable
+	case apperr.KindConflict:
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
@@ -107,6 +109,10 @@ func renderFields(l i18n.Localizer, fields []apperr.Field) map[string][]string {
 
 // attributeName is the human name of a field: a translation when one exists, else the field with spaces.
 func attributeName(l i18n.Localizer, field string) string {
+	// Nested fields ("charges.2.name") are named after their last segment.
+	if i := strings.LastIndex(field, "."); i >= 0 {
+		field = field[i+1:]
+	}
 	if key := "validation.attributes." + field; l.Has(key) {
 		return l.T(key, nil)
 	}

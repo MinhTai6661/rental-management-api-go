@@ -22,6 +22,7 @@ func TestConstructors(t *testing.T) {
 		"too large":           {TooLarge(), KindTooLarge, CodeRequestTooLarge},
 		"busy":                {Busy(nil), KindBusy, CodeServerBusy},
 		"internal":            {Internal(nil), KindInternal, CodeServerInternal},
+		"conflict":            {Conflict(CodeRoomHasContract), KindConflict, CodeRoomHasContract},
 		"invalid":             {Invalid(Field{Name: "x", Rule: RuleRequired}), KindValidation, CodeValidationFailed},
 	}
 	for name, tc := range cases {

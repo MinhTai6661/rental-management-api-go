@@ -69,7 +69,7 @@ func TestStatusOfCoversEveryKind(t *testing.T) {
 	want := map[apperr.Kind]int{
 		apperr.KindInternal: 500, apperr.KindUnauthenticated: 401, apperr.KindForbidden: 403, apperr.KindNotFound: 404,
 		apperr.KindMethodNotAllowed: 405, apperr.KindBadRequest: 400, apperr.KindTooLarge: 413,
-		apperr.KindValidation: 422, apperr.KindRateLimited: 429, apperr.KindBusy: 503,
+		apperr.KindValidation: 422, apperr.KindRateLimited: 429, apperr.KindBusy: 503, apperr.KindConflict: 409,
 	}
 	for kind, status := range want {
 		if got := statusOf(kind); got != status {
