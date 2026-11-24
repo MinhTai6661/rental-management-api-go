@@ -20,6 +20,7 @@ import (
 	paymentdomain "rental-management/internal/domain/payment"
 	propertydomain "rental-management/internal/domain/property"
 	invoiceuc "rental-management/internal/usecase/invoice"
+	notificationuc "rental-management/internal/usecase/notification"
 	paymentuc "rental-management/internal/usecase/payment"
 	"rental-management/pkg/imaging"
 	"rental-management/pkg/secretbox"
@@ -168,9 +169,9 @@ type proofLimits struct {
 // newPayments builds the payment use cases on Postgres, the file store over files and the image processor. The bills are
 // a read-only view in the payment database adapter and are moved to paid through the invoice use cases (invoiceStatus);
 // the settings of the payment methods are encrypted with the sealer, the proof links are signed with a key derived from
-// DATA_ENCRYPTION_KEY, and the notification, audit and mail ports keep their no-op defaults until those contexts exist.
-// It also gives the invoice context's ledger its file store, so a deleted bill takes its proof pictures with it.
-func newPayments(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage, sealer *secretbox.Box, b invoices) (payments, error) {
+// DATA_ENCRYPTION_KEY, the messages go through n (nil: nobody is told), and the audit and mail ports keep their no-op
+// defaults until those contexts exist. It also gives the invoice context's ledger its file store, so a deleted bill takes its proof pictures with it.
+func newPayments(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files storage.Storage, sealer *secretbox.Box, b invoices, n *notificationuc.Deliveries) (payments, error) {
 	key, err := cfg.DataKey()
 	if err != nil {
 		return payments{}, err
@@ -187,6 +188,9 @@ func newPayments(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files 
 			MaxBytes: maxBytes, MaxDimension: cfg.MediaMaxDimension, ThumbMaxSize: cfg.MediaThumbnailMaxSize,
 		}, cfg.ImageProcessingConcurrency))},
 		Links: links, Sealer: sealer, Clock: paymentuc.ClockFunc(time.Now), Log: log,
+	}
+	if n != nil {
+		deps.Notifier = paymentNotifier{m: n}
 	}
 	opts := paymentOptions(cfg)
 	b.ledger.l = paymentuc.NewLedger(deps, opts)

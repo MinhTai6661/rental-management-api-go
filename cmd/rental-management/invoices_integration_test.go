@@ -22,7 +22,7 @@ func (e *bridgeEnv) invoices() invoices {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	b, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer)
+	b, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer, nil)
 	if err != nil {
 		e.t.Fatal(err)
 	}

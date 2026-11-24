@@ -77,6 +77,8 @@ const (
 	CodeInvoiceLinkInvalid   = "invoice.link_invalid"
 	CodePaymentNotPayable    = "payment.invoice_not_payable"
 	CodePaymentReviewed      = "payment.already_reviewed"
+	CodeAnnouncementRecalled = "announcement.recalled"
+	CodeAnnouncementImageMax = "announcement.image_limit_reached"
 
 	CodeInvitationInvalid         = "invitation.invalid"
 	CodeInvitationNotPending      = "invitation.not_pending"
@@ -143,6 +145,17 @@ const (
 	RuleDateNotFuture          = "date_not_future"
 	RuleAccountFormat          = "account_number_format"
 	RulePhoneFormat            = "phone_format"
+
+	RuleTitleBodyPair  = "title_body_pair"
+	RuleOneLanguage    = "one_language"
+	RuleNowhereToGo    = "nowhere_to_go"
+	RuleCTAIncomplete  = "cta_incomplete"
+	RuleURLUnsafe      = "url_unsafe"
+	RuleNoPeople       = "no_people"
+	RuleAudienceEmpty  = "audience_empty"
+	RuleLinkNotAllowed = "link_not_allowed"
+	RuleAfterOrEqual   = "after_or_equal"
+	RuleMaxDays        = "max_days"
 )
 
 // Codes lists every error code; each needs a translation under "errors.<code>".
@@ -159,7 +172,7 @@ func Codes() []string {
 		CodeListingUnpublish, CodeListingLimit, CodeInvoiceNotRunning, CodeInvoiceAlreadyPaid, CodeInvoiceSendFirst,
 		CodeInvoiceLocked, CodeInvoiceReviewPending, CodeInvoiceLinkNeedsSent, CodeInvoiceLinkInvalid,
 		CodeInvitationInvalid, CodeInvitationNotPending, CodeInvitationLinkUnavailable, CodeInvitationOwnOffer,
-		CodePaymentNotPayable, CodePaymentReviewed,
+		CodePaymentNotPayable, CodePaymentReviewed, CodeAnnouncementRecalled, CodeAnnouncementImageMax,
 	}
 }
 
@@ -176,6 +189,8 @@ func Rules() []string {
 		RuleDayNeedsEnd, RuleInvalidPeriod, RulePeriodBilled, RulePaymentLabelChars,
 		RuleRecipientInvalid, RuleOwnEmail, RuleRecipientMismatch, RuleRequiredWithout, RuleLinkInvalid,
 		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
+		RuleTitleBodyPair, RuleOneLanguage, RuleNowhereToGo, RuleCTAIncomplete, RuleURLUnsafe, RuleNoPeople, RuleAudienceEmpty,
+		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays,
 	}
 }
 

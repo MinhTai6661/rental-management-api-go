@@ -236,11 +236,14 @@ func newPropertyEnv(t *testing.T, plans usecase.PlanLimits, options ...func(*use
 	e.engine = gin.New()
 	e.engine.Use(httpx.RequestID(slog.New(slog.DiscardHandler)), httpx.Locale(catalog), httpx.Recover())
 	binder := httpx.NewBinder()
-	propertyhttp.MountProperty(e.engine.Group("/v1"),
+	v1 := e.engine.Group("/v1")
+	media := propertyhttp.NewMediaHandler(usecase.NewMedia(deps, opts), e.files, binder, opts.MaxUploadBytes)
+	propertyhttp.MountProperty(v1,
 		propertyhttp.NewBuildingHandler(buildings, e.files, binder),
-		propertyhttp.NewRoomHandler(rooms, e.files, binder),
-		propertyhttp.NewMediaHandler(usecase.NewMedia(deps, opts), e.files, binder, opts.MaxUploadBytes),
-		auth, allowAll{})
+		propertyhttp.NewRoomHandler(rooms, e.files, binder), media, auth, allowAll{})
+	// The public picture route is mounted by cmd/rental-management (shared with the other contexts).
+	v1.GET("/media/*key", media.Serve)
+	v1.HEAD("/media/*key", media.Serve)
 	return e
 }
 

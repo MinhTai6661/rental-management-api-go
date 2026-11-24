@@ -79,7 +79,8 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	pricing := newPlans(log, pool)
+	// The seed wires no notifier: its demo flows stay silent (the demo inbox is written by its own seeder).
+	pricing := newPlans(log, pool, nil)
 	if err := pricing.seeder.SeedPlans(ctx); err != nil {
 		return err
 	}
@@ -96,7 +97,7 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(domain.DemoAccounts()))
 
 		// The seed stores no pictures, so it gets an in-memory store instead of touching the media directory.
-		offers := newListings(log, pool, pricing)
+		offers := newListings(log, pool, pricing, nil)
 		sealer, err := newSealer(cfg)
 		if err != nil {
 			return err
@@ -106,7 +107,7 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		// The seed never emails anybody: the invitation mailer keeps its no-op default.
-		rentals := newContracts(cfg, log, pool, pricing, invitationPorts{invitees: invitees, sealer: sealer})
+		rentals := newContracts(cfg, log, pool, pricing, invitationPorts{invitees: invitees, sealer: sealer}, nil)
 		properties := newProperty(cfg, log, pool, storage.NewMemory(cfg.MediaPublicBaseURL), rentals, offers, pricing)
 		if err := properties.seeder.SeedDemo(ctx, ids["landlord@rental.test"]); err != nil {
 			return err
@@ -128,7 +129,7 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "seeded the demo invitation (%d new)\n", offered)
-		billing, err := newInvoices(cfg, log, pool, pricing, sealer)
+		billing, err := newInvoices(cfg, log, pool, pricing, sealer, nil)
 		if err != nil {
 			return err
 		}
@@ -137,7 +138,7 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "seeded the demo invoices (%d new)\n", made)
-		paying, err := newPayments(cfg, log, pool, storage.NewMemory(cfg.MediaPublicBaseURL), sealer, billing)
+		paying, err := newPayments(cfg, log, pool, storage.NewMemory(cfg.MediaPublicBaseURL), sealer, billing, nil)
 		if err != nil {
 			return err
 		}
@@ -151,6 +152,11 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "put the demo accounts on their plans (%d changed)\n", given)
+		told, err := newNotifications(cfg, log, pool, nil, nil).seeder.SeedDemo(ctx, ids)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "seeded the demo notifications (%d new)\n", told)
 	}
 	return nil
 }
@@ -177,7 +183,7 @@ func loadWithDatabase() (config.Config, error) {
 
 // runExpireSubscriptions runs `rental-management subscriptions-expire`: it marks the subscriptions that ran past their
 // end as expired and prints how many it did. It is safe to run again and to run twice at once, so a daily cron entry
-// (there is no scheduler in the binary) can call it as often as it likes.
+// (or `rental-management worker`, which runs it daily) can call it as often as it likes.
 func runExpireSubscriptions(ctx context.Context, out io.Writer) error {
 	cfg, err := loadWithDatabase()
 	if err != nil {
@@ -192,7 +198,7 @@ func runExpireSubscriptions(ctx context.Context, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	n, err := newPlans(log, pool).subscriptions.ExpireDue(ctx)
+	n, err := newPlans(log, pool, newNotifications(cfg, log, pool, nil, nil).deliveries).subscriptions.ExpireDue(ctx)
 	if err != nil {
 		return err
 	}
@@ -219,7 +225,13 @@ func runInvoiceCommand(ctx context.Context, out io.Writer, run func(context.Cont
 	if err != nil {
 		return err
 	}
-	billing, err := newInvoices(cfg, log, pool, newPlans(log, pool), sealer)
+	pusher, closePusher, err := openCommandPusher(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer closePusher()
+	inbox := newNotifications(cfg, log, pool, nil, pusher)
+	billing, err := newInvoices(cfg, log, pool, newPlans(log, pool, inbox.deliveries), sealer, inbox.deliveries)
 	if err != nil {
 		return err
 	}
@@ -233,8 +245,8 @@ func runInvoiceCommand(ctx context.Context, out io.Writer, run func(context.Cont
 
 // runSendInvoices runs `rental-management invoices-send-automatic`: it sends the bill of the current period of every
 // running contract whose landlord's plan has automatic invoicing and that has no bill for it yet. A period that has a
-// bill is left alone, so it is safe to run again and to run twice at once: a daily cron entry (there is no scheduler in
-// the binary) can call it as often as it likes.
+// bill is left alone, so it is safe to run again and to run twice at once: a daily cron entry (or `rental-management
+// worker`) can call it as often as it likes.
 func runSendInvoices(ctx context.Context, out io.Writer) error {
 	return runInvoiceCommand(ctx, out, func(ctx context.Context, b invoices) (string, error) {
 		n, err := b.automation.SendAutomatic(ctx)
@@ -250,4 +262,60 @@ func runSendReminders(ctx context.Context, out io.Writer) error {
 		n, err := b.automation.SendReminders(ctx)
 		return fmt.Sprintf("sent %d reminders", n), err
 	})
+}
+
+// runPruneNotifications runs `rental-management notifications-prune`: it deletes the messages older than
+// NOTIFICATION_RETENTION_DAYS and prints how many it deleted. It is safe to run again and to run twice at once, so a
+// daily cron entry (or `rental-management worker`) can call it as often as it likes.
+func runPruneNotifications(ctx context.Context, out io.Writer) error {
+	cfg, err := loadWithDatabase()
+	if err != nil {
+		return err
+	}
+	pool, err := openPool(ctx, cfg, 0)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	log, err := logger.New(io.Discard, cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		return err
+	}
+	n, err := newNotifications(cfg, log, pool, nil, nil).pruner.Prune(ctx)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(out, "deleted %d notifications\n", n)
+	return nil
+}
+
+// runDispatchAnnouncements runs `rental-management announcements-dispatch-due`: it sends the notifications of the
+// published announcements whose start has come (a scheduled one waits for it) and retries the ones whose delivery
+// failed. Every announcement is delivered once, so it is safe to run again and to run twice at once: a cron entry every
+// minute (or `rental-management worker`) can call it.
+func runDispatchAnnouncements(ctx context.Context, out io.Writer) error {
+	cfg, err := loadWithDatabase()
+	if err != nil {
+		return err
+	}
+	pool, err := openPool(ctx, cfg, 0)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	log, err := logger.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		return err
+	}
+	pusher, closePusher, err := openCommandPusher(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer closePusher()
+	n, err := newNotifications(cfg, log, pool, nil, pusher).announcements.DispatchDue(ctx)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(out, "delivered %d announcements\n", n)
+	return nil
 }

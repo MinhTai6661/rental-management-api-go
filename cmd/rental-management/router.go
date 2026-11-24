@@ -25,6 +25,8 @@ type routerDeps struct {
 	RequestTimeout time.Duration
 	// CORSOrigins are the web origins allowed to call the API from a browser.
 	CORSOrigins []string
+	// LongLived are the full paths (event streams) that must not get the request deadline.
+	LongLived []string
 	// Modules mount their routes on the /v1 group.
 	Modules []func(v1 *gin.RouterGroup)
 	// Ready are the dependency checks behind /readyz (database, Redis...).
@@ -51,7 +53,7 @@ func newRouter(d routerDeps) *gin.Engine {
 		httpx.Locale(d.Catalog),
 		httpx.AccessLog(),
 		httpx.Recover(),
-		httpx.Timeout(d.RequestTimeout),
+		httpx.Timeout(d.RequestTimeout, d.LongLived...),
 	)
 
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, apperr.E(apperr.KindNotFound, apperr.CodeRouteNotFound)) })

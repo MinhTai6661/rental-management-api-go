@@ -96,6 +96,11 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `PAYMENT_PROOF_URL_TTL_MINUTES` | `120` | how long the signed link to a proof picture works (1-1440) |
 | `API_PUBLIC_URL` | `http://localhost:8090` | public origin of this API (no trailing slash): the signed proof links are absolute and start with it |
 | `INVITATION_TTL_DAYS` | `7` | how long an invitation to rent a room (a link the landlord sends) can be answered (1-90) |
+| `ANNOUNCEMENT_IMAGE_MAX_PLATFORM` / `ANNOUNCEMENT_IMAGE_MAX_LANDLORD` | `10` / `3` | pictures one popup of the platform's admins / of a landlord may have (1-20) |
+| `REALTIME_TICKET_TTL` / `REALTIME_HEARTBEAT` / `REALTIME_STREAM_MAX_AGE` | `60s` / `25s` / `15m` | how long a stream ticket works / how often an idle stream gets a `: ping` / how long one stream lasts before it ends with `expired` (keep it at most the access-token life: a revoked session loses its stream within one token life) |
+| `WORKER_TICK` / `WORKER_DISPATCH_INTERVAL` / `WORKER_DAILY_INTERVAL` | `30s` / `1m` / `0s` | how often the worker looks at its jobs / how often it delivers due announcements / when above zero, an interval that replaces the daily times of the daily jobs (tests and demos only) |
+| `REALTIME_MAX_STREAMS_PER_USER` | `5` | open event streams one person may hold on one API instance (1-100); the next one is a 429 |
+| `NOTIFICATION_RETENTION_DAYS` | `90` | how long a notification is kept before `notifications-prune` deletes it (1-3650) |
 | `SEED_DEMO_PASSWORD` | - | password of the `seed -demo` accounts; the command refuses to run in production |
 
 ## Pictures in S3/R2
@@ -124,7 +129,7 @@ AWS S3, SeaweedFS or MinIO. The API behaves the same; keys (`property/2026/11/<r
 ## Layout and dependency rules
 
 ```
-cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo] | media-upload | subscriptions-expire; also the composition root (api.go builds the dependencies, router.go the router, commands.go migrate/seed, bridges.go the adapters between contexts): the only place that knows every layer
+cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo] | media-upload | subscriptions-expire | invoices-send-automatic | invoices-send-reminders | notifications-prune | announcements-dispatch-due | worker; also the composition root (api.go builds the dependencies, router.go the router, commands.go migrate/seed, bridges.go the adapters between contexts): the only place that knows every layer
 db/migrations/                goose migrations, embedded in the binary
 db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/adapter/persistence/postgres/sqlc, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/adapter/snapshot/locationdata/locations.json.gz)
@@ -134,6 +139,7 @@ pkg/                          INFRASTRUCTURE shared by every module; no business
   authz/                    pure authorization rules: roles, active-role resolution, permissions, Principal
   i18n/                     vi/en messages (go-i18n, embedded JSON) and Accept-Language negotiation (x/text/language)
   db/                       pgx pool, transactions, error helpers, goose runner
+  schedule/                 the worker's scheduler: jobs on intervals or at a time of day, Locker and Marks ports, the Runner (stdlib ticker)
   ratelimit/                per-client limits on Redis (redis_rate, GCRA); the Limiter interface the middleware uses
   mail/                     Mailer port: SMTP (go-mail), log, test recorder; vi/en email templates
   logger/                   slog setup
@@ -152,7 +158,7 @@ internal/
     identity/                 Auth (register, login, refresh, logout, switch role, change password, me, authenticate, verify/resend email), Seeder
     location/                 Locations (list provinces, wards of a province), Seeder (load the snapshot)
     property/                 Buildings, Rooms, Media (one file per use case or small group; a building edit reaches its rooms in one transaction), Seeder (demo data); ports: repositories, FileStore, ImageProcessor, PlanLimits, RoomGuards, RoomObserver
-    contract/                 Contracts (list, get, register, update, bulk answer, terminate, cancellation, delete, reorder), Rentals (the tenant's own list and detail), Invitations (the landlord's offers by link: create, list, get, copy the link, new link, withdraw), RoomLinks (what property needs: blank contracts, locks), Seeder; ports: ContractRepository, InvitationRepository, Invitees, LinkTokens, Sealer, InvitationMailer, RoomReader, RoomStatusSetter, Notifier, AuditRecorder, PlanLimits
+    contract/                 Contracts (list, get, register, update, bulk answer, terminate, cancellation, delete, reorder), Rentals (the tenant's own list and detail), Invitations (the landlord's offers by link: create, list, get, copy the link, new link, withdraw), InvitationAnswers (the invited person's: preview, accept, decline, inbox; accepting shares `core.admit` with registration), RoomLinks (what property needs: blank contracts, locks, withdrawing the offers of deleted rooms), Seeder (+ the demo offer); ports: ContractRepository, InvitationRepository, Invitees, LinkTokens, Sealer, InvitationMailer, RoomReader, RoomStatusSetter, Notifier, AuditRecorder, PlanLimits
     listing/                  Listings (a landlord's own: list, get, create, update, submit, unpublish, delete), Reviews (the admins': list, get, approve, reject, take down, bulk), Offers (the search of find rooms and the landlord card), RoomLinks (what property needs: open listings, back to draft), Seeder; ports: ListingRepository, RoomReader, OfferRepository, SeedRooms, PlanLimits, SearchPriority, Notifier, AuditRecorder, Clock
     plan/                     Plans (the catalog: available, list, create, update), Subscriptions (mine, subscribe, cancel, assign, activate, revoke, search, expire), Limits (what the plan of an account allows, search priority), Seeder (base plans, demo subscriptions); ports: PlanRepository, SubscriptionRepository, Accounts, UsageReader, Notifier, AuditRecorder, Clock
   adapter/                    everything that talks to the outside world; implements the ports declared by the use cases
@@ -174,7 +180,8 @@ internal/
       property/               (package propertypg) building, room, charge and media repositories, row <-> domain mapping
       contract/               (package contractpg) contract and invitation repositories and the read-only room view contracts need, row <-> domain mapping
       sqlc/                   the one generated sqlc package (all queries of db/queries)
-    redis/                    (package redisstore) the revoked tokens and sessions store
+    redis/                    (package redisstore) the revoked tokens and sessions store; realtime.go: the Pub/Sub broadcaster and the one-time stream tickets
+    realtime/                 the in-memory hub that hands server-sent events to the streams open on this instance (stdlib only)
     security/                 argon2id password hasher, JWT access tokens, opaque random tokens
     mail/                     (package mailadapter) the verification email and the invitation email on top of pkg/mail
     snapshot/locationdata/    the provinces/wards snapshot embedded in the binary (locations.json.gz) and its decoder
@@ -239,6 +246,19 @@ cycle. The payment database adapter reads `invoices`, `contracts` and `rooms` re
 the file and image adapters through the same kind of bridge (the adapters speak property's domain errors; the bridge turns
 them into payment's), and `newInvoices` builds a ledger without a file store for the daily commands that `newPayments`
 replaces with the full one in the API process.
+
+Notification (the in-app inbox) is the ninth context: `domain/notification/`, `usecase/notification/`,
+`adapter/http/notification/` (`notificationhttp`) and `adapter/persistence/postgres/notification/` (`notificationpg`). It is the
+one place every context sends messages to, yet **it imports no other context and none imports it** (linter rules
+`notification-does-not-know-other-contexts` and `other-contexts-do-not-know-notification`). Each context keeps its own `Notifier`
+port and `Notification` struct; **`cmd/rental-management/bridges_notification.go`** adapts all five (`contractNotifier`,
+`planNotifier`, `listingNotifier`, `invoiceNotifier`, `paymentNotifier`, ten lines each) to the one use case
+`notificationuc.Deliveries` (`Send`, `SendToAdmins`), and a unit test there lists every `Notify*` constant of every context and
+fails when one is not in the catalog. The catalog of kinds is **one typed set**, `notification.Kind` (`ParseKind`,
+`DefaultAudience`), holding every kind of the Laravel API plus `announcement`, so later phases add no catalog entry; the database
+only checks that a kind looks like `[a-z_]{1,50}`. `newNotifications` is built first in `runAPI` and its `Deliveries` is passed to
+`newPlans`, `newListings`, `newContracts`, `newInvoices` and `newPayments` (a nil one, as the demo seed passes, leaves the
+context's notifier at its no-op default, so the seed's demo flows stay silent).
 
 Where does new code go? Business behaviour -> the layers above. A technical tool several features share (database,
 mail, i18n...) -> `pkg/` (settings -> `config/`); HTTP-only helpers -> `adapter/http/httpx`. Nothing else goes in `internal/`.
@@ -493,7 +513,7 @@ Rules worth knowing:
   approved. A blank contract does not lock the room and is not counted against a plan.
 - A room with a running contract **with a tenant** cannot be deleted or moved out of `rented` (property's 409 codes).
 - Reopening an `ended` or `rejected` contract is an update with `status`; the request that ended it is cleared.
-- The notification and audit ports are no-ops for now (see [Known gaps](#known-gaps)); the plan port is the plan context's (see [Plans](#plans-and-subscriptions)); the use cases call them where the
+- The audit port is a no-op for now and the notification port is the inbox's (see [Notifications](#notifications-the-inbox), [Known gaps](#known-gaps)); the plan port is the plan context's (see [Plans](#plans-and-subscriptions)); the use cases call them where the
   Laravel API notifies and audits (`registration_confirmed|approved|rejected`, `cancellation_requested|declined`, `contract_ended`;
   `contract.registered|created|updated|deleted|terminated|cancellation_*`).
 - The demo seed (`make seed-demo`) gives `tenant@rental.test` a running contract on P101 (so P101 is `rented`), a registration
@@ -545,8 +565,8 @@ Rules worth knowing:
   (`max_images_per_room`, else `MEDIA_MAX_PER_OWNER`), a landlord's running contracts **with a tenant** and a tenant's waiting
   registrations. A bigger plan lifts the limit at once; a lapsed subscription is ignored even before the expiry job runs.
 - **Expiry**: `rental-management subscriptions-expire` (`make expire-subscriptions`) marks the active subscriptions past their
-  `ends_at` as `expired`, in batches, and prints the count. It is idempotent and safe to run twice at once; run it daily from
-  cron (the binary has no scheduler).
+  `ends_at` as `expired`, in batches, and prints the count. It is idempotent and safe to run twice at once; the worker runs it
+  daily (see [Background jobs](#background-jobs)), or call it from cron.
 - Money is whole VND; there is no `currency` (VND only) and no `auto_renew` (no payment gateway to renew with).
 
 ### Listings and find rooms
@@ -658,7 +678,7 @@ them so the period can be billed again.
 - **Contracts nobody with an account holds** (blank contracts) are billed by `delivery: link` only: the landlord passes the
   link on. The link's secret is stored hashed (lookup) and encrypted with `DATA_ENCRYPTION_KEY` (copy again), expires after
   `INVOICE_SHARE_TTL_DAYS`, and a copy that cannot be decrypted is replaced by a new link.
-- **Automatic sending and reminders** are commands for cron (no scheduler in the binary): `make send-invoices`
+- **Automatic sending and reminders** are commands that the worker runs daily (or cron, see [Background jobs](#background-jobs)): `make send-invoices`
   (`invoices-send-automatic`) sends the current period of every running contract of a landlord whose plan has
   `auto_invoicing` (rent and fixed charges only: meters cannot be known), idempotent per period; `make send-reminders`
   (`invoices-send-reminders`) reminds the tenant `INVOICE_REMINDER_DAYS` before the due date and tenant and landlord the day
@@ -668,7 +688,7 @@ them so the period can be billed again.
   context's real ledger (wired in `bridges_payment.go`; `NoLedger` stays the default for tests): it feeds `payment_summary`, the
   "locked once somebody paid" rule and the "settle" step; `already_paid`/`PATCH paid` record a confirmed `recorded` payment of
   the money still owed (`Settle`, which never touches the status itself), reopening voids it (`Void`), deleting the bill removes
-  its payments and proofs (`Purge`). The notification, audit and email ports are no-ops until
+  its payments and proofs (`Purge`). The notification port is the inbox's; the audit and email ports are no-ops until
   their phases (the use cases call them where Laravel does; the unit tests check the calls).
 - The demo seed gives the ended contract on P103 a paid bill, a sent one and a sent one passed on by link, and the running
   contract on P101 a draft for the current period; a contract that already has a bill is left alone.
@@ -720,12 +740,12 @@ wrong role is a 403. Every list is paged (`page`, `per_page` <= 100, `meta {page
   (the key changed) shows as never saved.
 - **Proofs** are private files under `payments/YYYY/MM/<32 hex>` in the media store (`.webp` when the client sent WebP, `.jpg`
   otherwise, with a `_thumb.jpg` copy), written **before** the transaction and removed if it fails or the payment is withdrawn.
-  The public `GET /v1/media/*key` route serves only `property/` keys, so a proof is reachable only through its signed link
+  The public `GET /v1/media/*key` route serves only `property/` and `announcements/` keys, so a proof is reachable only through its signed link
   (HMAC-SHA256 over payment, file and expiry, key derived from `DATA_ENCRYPTION_KEY`, valid `PAYMENT_PROOF_URL_TTL_MINUTES`);
   only the two sides of a payment are given links. The bytes are served as stored, whatever the `.webp` in the name says.
 - **Locks**: confirming locks the bill first and the payment second, the order the invoice use cases lock in, so the two cannot
   deadlock; submitting and recording lock the bill, so two parallel payments cannot together pay more than the total.
-- **Events** (no-op ports until their phases; the unit tests check the calls): `payment_submitted` to the landlord (with
+- **Events** (notifications are real; audit and mail ports are no-ops until their phases; the unit tests check the calls): `payment_submitted` to the landlord (with
   `remaining_vnd`), `payment_confirmed` / `payment_rejected` to the tenant (and an email, `PaymentMailer`), audit actions
   `payment.submitted|confirmed|rejected|withdrawn|recorded`, `payment_method.saved|removed`.
 - **Contracts**: the renter's `GET /v1/me/contracts` carries `billing {due_count, due_amount_vnd, partial, review_count, overdue,
@@ -742,6 +762,76 @@ wrong role is a 403. Every list is paged (`page`, `per_page` <= 100, `meta {page
   no manager access (a manager with `payments.review`).
 - The demo seed gives the landlord a bank transfer (VCB) and the sent bill of the ended contract on P103 a confirmed 40% payment
   and a pending 20% one (the paid bill there already has the recorded payment the ledger wrote); run twice it adds nothing.
+
+### Notifications (the inbox)
+
+Every signed-in person, in any role, has an inbox of **messages the other contexts sent them** (a bill, a payment decision, a
+registration, a listing review, a subscription...). A message is a **kind**, its **params** and a **url**: the API never stores
+text, the web translates `notifications.kinds.<kind>` with `params`, so a message reads in the language the person picks when they
+look. The routes need only a bearer token (no permission, not rate limited) and **every query is scoped to the caller**: somebody
+else's message is a 404 `resource.not_found`, and `bulk` silently ignores ids that are not the caller's.
+
+| Method | Path | Auth | Success | Notes |
+|---|---|---|---|---|
+| GET | `/v1/notifications` | any role | 200 feed `meta {page, per_page, has_more, unread_count}` | `?unread=true\|false`, `?kind=` (unknown kind: 422 `kind` `oneof`), `?page`, `?per_page`; newest first; no COUNT |
+| GET | `/v1/notifications/latest` | any role | 200 `data[]`, `meta {unread_count}` | the bell: `?limit` 1-20 (default 8, larger is clamped to 20); not paged |
+| GET | `/v1/notifications/unread-count` | any role | 200 `{"unread_count": n}` | |
+| POST | `/v1/notifications/read-all` | any role | 200 `{"updated": n}` | only the inbox of the role the caller acts in |
+| POST | `/v1/notifications/bulk` | any role | 200 `{"done": n}` | `{action: read\|delete, ids[1..100]}`; `done` counts what changed (own messages only) |
+| POST | `/v1/notifications/{id}/read` | any role | 200 the message | 404 for another person's; a second read keeps the first `read_at` |
+| DELETE | `/v1/notifications/{id}` | any role | 204 | 404 for another person's |
+| DELETE | `/v1/notifications?scope=read\|all` | any role | 200 `{"deleted": n}` | clears the caller's inbox of every role; `scope` is required (422 `scope` `oneof`) |
+
+Message: `{"id", "kind", "params": {"room": "P101", ...}, "url": "/my-rooms" | null, "read_at": null | "...", "created_at"}`.
+
+- **One inbox per role.** One account can be a tenant, a landlord and a manager and acts in one role at a time. A message has an
+  `audience` (`landlord`, `tenant`, `manager`, or none = every role): the sender can say it, otherwise the kind decides (a bill
+  is for the tenant side, a payment sent for the landlord side, a contract ending for both). Acting as tenant, landlord or manager
+  shows the messages for that side **and** the ones for none; acting as staff shows everything addressed to the person.
+  `unread_count` and `read-all` follow the same filter, so switching role switches inbox. (Deviation from Laravel, whose manager
+  mode showed every row: here a manager sees the manager side and the shared messages.)
+- **Who is told.** The contract, plan, listing, invoice and payment use cases already call their `Notifier` where the Laravel API
+  notifies; it is now real (`registration_confirmed|approved|rejected`, `cancellation_requested|declined`, `contract_ended`,
+  `contract_invitation_received|accepted|declined`, `subscription_requested` (every admin) `|activated`, `listing_submitted` (every
+  admin) `|approved|rejected|taken_down`, `invoice_sent|updated|due_soon|overdue`, `tenant_invoice_overdue`,
+  `payment_submitted|confirmed|rejected`). "Every admin" means the active accounts holding the `admin` role; **super admins are
+  not told**, as in Laravel. Delivery is after the commit and a failure is only logged, never undoes the action.
+- **Storage.** Table `notifications` (migration `00011`): `kind` checked by a regex, `params` a jsonb object, `audience_role`,
+  `read_at`; an index for the inbox (`user_id, created_at desc, id desc`), one for the unread count and one for the prune. The
+  rows go with the user (`ON DELETE CASCADE`).
+- **Retention.** `rental-management notifications-prune` (`make prune-notifications`) deletes, in batches of 5000, what is older
+  than `NOTIFICATION_RETENTION_DAYS`. It is idempotent and safe to run twice at once; the worker runs it daily.
+- The demo seed writes five messages (the tenant: a bill and an approved registration, the second already read; the landlord: a
+  payment and a registration, for the landlord side; the admin: a submitted listing), only when the account has none of that kind.
+
+### Realtime (server-sent events)
+
+An accelerator for the bell: the inbox rows are the record, the stream only says "look again". The API pushes what a notification
+holds (`{kind, params, url}`; an announcement carries just `{kind: "announcement", url: "/notifications"}`, no texts) to the people who
+are online, through Redis Pub/Sub (one channel, `<REDIS_KEY_PREFIX>rt:events`, that every API instance listens to; each instance's
+in-memory hub (`adapter/realtime`) hands the event to the streams it holds). A failed push is logged and never undoes a delivery.
+`Deliveries` (every context's notifier, the announcement delivery, `invoices-send-reminders` and `announcements-dispatch-due`, which
+push when `REDIS_URL` is set) all push through the one `Pusher` port.
+
+| Method | Path | Auth | Success | Notes |
+|---|---|---|---|---|
+| POST | `/v1/realtime/ticket` | any role, 30/min | 201 `{ticket, expires_in: 60, stream_url}` | a one-time ticket (32 random bytes, only its hash is in Redis, `GETDEL`, `REALTIME_TICKET_TTL`) bound to the caller and the role they act in now |
+| GET | `/v1/realtime/stream?ticket=...` | the ticket (or a bearer header) | 200 `text/event-stream` | 401 `auth.unauthenticated` for a missing, unknown, expired or already used ticket; 429 `request.rate_limited` over `REALTIME_MAX_STREAMS_PER_USER` |
+
+A browser `EventSource` cannot send headers, hence the ticket (the access token never goes in a URL); a fetch-based client may send
+`Authorization: Bearer` instead of a ticket. The route has **no request deadline and no write deadline** (it skips `httpx.Timeout`
+and lifts the server's write deadline); API shutdown closes every stream.
+
+Events (`event: <name>` + one line of JSON `data:`): `ready` (`{}`, first), `notification` (`{kind, params?, url?}`), `announcement`
+(`{kind, url}`), `expired` (`{}`, then the server closes), and a `: ping` comment every `REALTIME_HEARTBEAT`. **A stream only gets
+the events of the role it was opened for**: a message for the landlord side does not reach the stream of the same account acting
+as a tenant (staff streams get everything addressed to them). A stream that cannot keep up (16 events waiting) is closed.
+
+**Web contract.** Get a ticket, `new EventSource(stream_url)`. On `ready`: reload `GET /v1/notifications/latest` (nothing is
+replayed, `Last-Event-ID` is ignored, so this is how missed events are made up). On `notification` or `announcement`: reload the bell.
+On `expired` or an error: close, wait (1, 2, 5 s with jitter), get a **new ticket**, reconnect; a ticket works once, so
+`EventSource`'s own automatic reconnect to the same URL will get 401 and must be replaced by this. When the tab was hidden for 30 s
+or more, reload on becoming visible. CORS: a stream from the allowed web origins is a plain cross-origin GET and works as is.
 
 ### Invitees (shared by every kind of invitation)
 
@@ -770,10 +860,10 @@ email (accounts of services without an email have none). The invitations themsel
   share an allowance.
 - The schema of the invitations themselves (`contract_invitations`) is in migration 00009.
 
-### Contract invitations (landlord)
+### Contract invitations
 
 A landlord offers a room on set terms and sends the offer as a link; whoever it is for opens it, signs in and accepts, and
-the contract is made then (the answering side is the next batch). The offer is for **one account** (`recipient_id`, or an
+the contract is made then ([the invited person's side](#contract-invitations-the-invited-person) is below). The offer is for **one account** (`recipient_id`, or an
 `email` an account holds), for **an address** nobody holds yet (`email`), or for **anybody** with the link (neither); the rule
 is `invitation.AudienceOf`. Routes need the landlord role and `contracts.create`; tenants and staff get 403, and another
 landlord's invitation (or an id that does not parse) is a 404 `resource.not_found`. Bodies, dates and money as for contracts.
@@ -817,7 +907,7 @@ defaults to 1; `contract_status` (the status the contract gets on acceptance: `a
   address is not blocked, an email whose link names the invitation and carries **no secret**; an **address** gets an email
   with the link that carries the token (not sent when the address opted out: `delivery.email` is then false); an offer to
   **anybody** is sent nowhere (the landlord passes the link on). `delivery.app` means "it sits in the account's inbox": the
-  notification port is still a no-op, so no notification is stored yet. The email is Vietnamese only and is sent
+  notification goes to the inbox (`GET /v1/notifications`, as the tenant). The email is Vietnamese only and is sent
   synchronously, with the opt-out link of the invitation context at its foot.
 - **The link** (`WEB_URL/contract-invitation?token=`) holds a 64-character secret (48 random bytes, base64url). The database
   keeps the SHA-256 of it (to look it up) and, while the offer is `pending`, a copy encrypted with `DATA_ENCRYPTION_KEY`
@@ -829,6 +919,46 @@ defaults to 1; `contract_status` (the status the contract gets on acceptance: `a
 - Lock order is room, then invitation, then contracts. Audit actions `contract_invitation.created|regenerated|revoked`
   (no-op port, unit tests check the calls). Manager-drafted offers (`created_by_id`, status `awaiting_approval`) have their
   seam in the use case but nothing creates them.
+
+### Contract invitations (the invited person)
+
+The person an offer is for (tenant role, `contract_invitations.respond`; a landlord must switch to the tenant role, staff get
+403) sees it, accepts or declines. The offer is named either by the secret of its link (`token`, which wins when both are sent)
+or, for an offer addressed to the caller's account, by its `invitation_id` (what the inbox and the in-app notification carry:
+no secret travels). All three routes share **one limit: 20/min per account** (`contract-invitation-answer`).
+
+| Method and path | Answer |
+|---|---|
+| `POST /v1/contract-invitations/preview` `{token}` or `{invitation_id}` | 200 the offer: landlord (`id`, `full_name` only), room (name, `house_name`, address, area, minimum period, ward and province, cover), terms, `expires_at`; nothing about who else was invited; nothing changes |
+| `POST /v1/contract-invitations/accept` `{token}` or `{invitation_id}` | 201 the new contract as its tenant sees it (`ContractView`); the landlord is notified (`contract_invitation_accepted`), the tenant is not |
+| `POST /v1/contract-invitations/decline` `{token}` or `{invitation_id}` | 204; the landlord is notified (`contract_invitation_declined`) |
+| `GET /v1/me/contract-invitations` (`page`, `per_page`) | 200 the open offers addressed to the caller's account (named offers only: never an address offer or a public one), newest first, `meta.total` |
+
+```json
+POST /v1/contract-invitations/accept   {"token": "<64 characters>"}      or   {"invitation_id": "0196..."}
+-> 201 {"data": {"id": "0196...", "status": "active", "price_vnd": 2400000, "tenant": {"id": "..."}, "room": {...}, ...}}
+```
+
+- **Accepting makes the contract through the same admission core as a registration** (`core.admit`): the room is not the
+  caller's own, a running contract gives way only to a blank one and stays within the landlord's plan limit (409
+  `contract.room_occupied`, `plan.contract_limit_reached`), the other waiting registrations of the room are rejected and the room
+  becomes `rented`; a `pending` offer is the caller's only open contract on the room (409 `contract.already_registered`); the
+  dates respect the room's minimum period (422 `ends_on`). **Any refusal rolls the whole transaction back, so the invitation
+  stays open** and the landlord may fix the cause. The landlord's own offer is refused (409 `invitation.own_offer`).
+- **Every bad link is the same 404 `invitation.invalid`** with the same body: malformed, unknown, expired, answered, withdrawn,
+  awaiting approval, not for the caller (named account / address audience), an `invitation_id` that is not addressed to the
+  caller or does not parse, and an offer whose room was deleted. A body with neither `token` nor `invitation_id` is a 422 on
+  `token` (`required_without`). Who may answer: an offer to an account, only that account; to an address, only an account whose
+  email equals it **and is verified**; to anybody, any signed-in tenant.
+- **Not required for an offer** (unlike a registration): a listing, a start date today or later, the tenant's waiting-registration
+  cap, the room being `available` (they guard unsolicited requests, not an offer to a chosen person).
+- **Expiry is read from the clock** (`pending` and `expires_at` passed): nothing runs to mark it. **Deleting a room withdraws its
+  waiting invitations** in the same transaction (status `revoked`, secret wiped, audit `contract_invitation.revoked` with
+  `reason: room_deleted`). Lock order everywhere: room, then invitation, then contracts.
+- Audit actions `contract_invitation.accepted|declined` (and `contract.created` with `origin: invitation`); notification kinds
+  `contract_invitation_received|accepted|declined` (the notifications reach the inbox; the audit port is still a no-op; the unit tests check the calls).
+- The demo seed offers **P105** to `tenant@rental.test` by id (starts in 14 days, `active`); the tenant's inbox shows it. Safe to
+  repeat: nothing is made once the landlord has any invitation.
 
 ### Error codes
 
@@ -879,6 +1009,8 @@ the two locale files differ.
 | `invoice.review_pending_first` | 409 | marking paid while a payment waits for review |
 | `payment.invoice_not_payable` | 409 | paying or recording money on a bill that is not `sent` (a draft is a 404 for the tenant) |
 | `payment.already_reviewed` | 409 | confirming, rejecting or withdrawing a payment that is no longer pending |
+| `announcement.recalled` | 409 | changing or putting out a message that was recalled |
+| `announcement.image_limit_reached` | 409 | a popup already has the most pictures allowed (param `max`) |
 | `invoice.link_needs_sent` | 409 | asking the link of a draft |
 | `invoice.link_invalid` | 404 | a bill link that is wrong, expired, withdrawn or for a draft (one answer for all) |
 | `invitation.invalid` | 404 | an invitation link or id that is wrong, expired, answered, withdrawn or not for the caller (one answer for all) |
@@ -891,13 +1023,104 @@ the two locale files differ.
 Validation rule keys (`validation.<rule>`): `required`, `email`, `min_string`, `max_string`, `min_number`,
 `max_number`, `integer`, `uuid`, `oneof`, `accepted`, `unique`, `exists`, `role_not_held`, `password_incorrect`,
 `password_same`, `min_items`, `max_items`, `distinct`, `image_type`, `image_dimensions`, `image_corrupt`,
-`file_too_large`, `building_price_missing`, `building_price_in_use`, `range_invalid`, `range_too_many`,
+`file_too_large`, `link_not_allowed`, `after_or_equal` (param `other`), `max_days` (param `max`), `building_price_missing`, `building_price_in_use`, `range_invalid`, `range_too_many`,
 `range_name_too_long`, `names_taken`, `single_cover`, `rental_period_pair`, `lte_field`, `date` (not `YYYY-MM-DD`),
 `after_start_date`, `date_not_past`, `below_minimum_months` / `below_minimum_days` (params `amount`, `date`: the earliest end),
 `unknown_service`, `previous_reading_required`, `reading_lower_than_previous`, `new_reading_required`, `nothing_to_bill`, `day_needs_end`, `invalid_period`, `period_billed` (bills), `recipient_invalid` / `own_email` / `recipient_mismatch` (who to invite), `required_without` (param `other`), `link_invalid` (an opt-out link), `amount_exceeds_remaining` (param `remaining`), `method_not_accepted`, `date_not_future`, `account_number_format`, `phone_format` (payments), `format` (a plan code), `datetime` (RFC 3339, `ends_at`).
 
 Field names in `fields` are paths: a nested field is `charges.2.name` (list items are numbered from 0).
 A state conflict (the request is fine but clashes with the current data) is 409, a bad field is 422.
+
+
+### Announcements (admin and landlord messages)
+
+One table, `announcements` (migration `00012`): a message is a notification in the inbox, a popup, or both. Status is never stored (`draft|scheduled|active|ended|recalled` from `published_at`, `starts_at`, `ends_at`,
+`recalled_at`). The sender's role is stored (`sender_role`), so a platform message belongs to any admin or super admin and a landlord's
+to that landlord; somebody else's id is a 404.
+
+| Method | Path | Who | Success | Notes |
+|---|---|---|---|---|
+| GET | `/v1/admin/announcements`, `/v1/my/announcements` | admin or super admin (`announcements.send`) / landlord (`announcements.send_to_tenants`) | 200 table `meta.total` | `?status`, `?from`, `?to` (ICT days, by publishing date), `?type`, `?channel=popup\|notification` |
+| POST | same path | same | 201 detail | `publish` defaults to true; landlord 30/hour |
+| POST | `.../reach` | same | 200 `{recipient_count}` | counts with the very definition delivery uses; 120/min |
+| GET | `.../{id}` | same | 200 detail | |
+| PUT | `.../{id}` | same | 200 detail | full replacement (absent = default); `publish`, `reshow` (raises `revision`); 409 `announcement.recalled` |
+| POST | `.../{id}/publish`, `.../{id}/unpublish` | same | 200 detail | idempotent; unpublish = back to draft, notifications already sent stay and are not sent twice |
+| DELETE | `.../{id}` | same | 204 | recall: deletes its notifications; 409 when already recalled |
+| GET | `/v1/my/announcements/people` | landlord | 200 table | `?search`: the landlord's running tenants |
+| POST | `.../{id}/images` | same | 201 picture | multipart `file`; adds at the end; 60/hour; 409 `announcement.image_limit_reached` (`max`: 10 platform, 3 landlord) |
+| PUT | `.../{id}/images` | same | 200 pictures | `{"items": [{"id", "link_url"?}]}` = the new order; pictures not listed are removed; `link_url` left out keeps the link, `""` clears it; 422 `items` `exists` / `link_url` `url_unsafe`; 422 `link_url` `link_not_allowed` for a landlord |
+| DELETE | `.../{id}/images/{image_id}` | same | 204 | positions close up, the file is deleted |
+| GET | `.../stats`, `.../{id}/stats` | same | 200 | `?from&to` (ICT days, default last 30, max 92: 422 `to` `max_days` / `after_or_equal`), `?channel=notification\|popup` (the figures of that channel only, absent = both) |
+
+**Popups** (pull). `GET /v1/popups/active` (any signed-in role) returns at most **3** popups, most important first (`priority`, then newest):
+`{id, type, title, body, cta{label,url}, popup_size, images[{id,url,width,height,link_url}], revision, from{name,kind,role}}`. A popup is
+returned when it is published, inside its window, the person belongs to its audience (the same SQL function as delivery) and the pure rules
+`domain/notification.Shows` allow it: never seen, or seen under an older `revision` (an edit with `reshow`), else by frequency (`once`: until
+closed; `every_session`: closed in this login session stays closed, a new session shows it; `every_days`: again N days after closing), then
+`max_total` (views in all) and `max_per_period` (views in the session / the N-day period). `POST /v1/popups/{id}/seen|dismiss|click`
+(204, 120/min) record what the person did (one row per person: `view_count`, `dismissed_at`, `clicked_at`; a click also closes); a popup that
+is not out, or not for the caller, is a 404 so nobody can skew the figures. Popups are always closable.
+
+**Pictures.** `announcements/YYYY/MM/<32 hex>.<webp|jpg>` through the same storage and image checks as property (the file is written before
+the transaction and removed if it fails; replaced files are deleted after the commit); only the main picture is stored. Only the platform's
+pictures may carry a `link_url` (`/page` or `https://`); links are set with `PUT .../images` (not on upload: a multipart text part is capped
+at 64 bytes). They are served by the shared public `GET|HEAD /v1/media/*key`, which `cmd/rental-management` mounts and dispatches by key prefix
+(`announcements/` here, anything else to property), same cache headers.
+
+**Statistics** (totals only, never who). Overview: `{range, messages{total, with_notification, with_popup}, totals, series}`. *Totals* follow a
+cohort: the messages published in the range (not recalled; the platform's for admins, a landlord's own) and everything their recipients did
+afterwards: `recipients` (sum of `recipient_count`), `read`, `read_rate`; `viewers`, `views`, `views_per_viewer`, `closed`, `clicked`,
+`close_rate`, `click_rate` (rates are `null` without a denominator, one decimal). *Series* are per day (ICT) over all the sender's messages: people
+who first saw the popup (`viewers`), closed it, pressed its button, and notifications read. The popup keeps one row per person, so there is no
+"views per day". Detail (`/{id}/stats`) is the same for one message. No cache.
+
+- **Audiences.** Platform: `everyone`, `landlords`, `tenants`, `custom` (criteria: roles, provinces, wards, plan codes (`none` = no plan),
+  registered within/at least N days, registered before a date, active within N days (max 90, from sessions), up to 50 user ids; AND between
+  criteria, OR inside one; they also narrow `everyone`). Landlord: `my_tenants`, `my_people` (tenants for now), `selected_people` + `people_ids`
+  (cut down to their own tenants). **One definition**: the SQL function `announcement_audience(...)` takes a filter resolved in Go
+  (`domain/notification.ResolveFilter`) and is used by the count, the delivery and the popup check, so they cannot disagree.
+- **Staff seniority.** Staff are reached only when the criteria name their role **and** they are below the sender: a super admin may name `admin`;
+  nobody else may name any staff role; `everyone`, `landlords`, `tenants` and a landlord's scopes never reach staff.
+- **Delivery.** Exactly once: `ClaimDelivery` (an `UPDATE ... WHERE sent_at IS NULL` that serializes concurrent callers) then one
+  `INSERT ... SELECT` from the audience function (`ON CONFLICT DO NOTHING`, unique `(announcement_id, user_id)`). Notification params
+  `announcement_id`, `title_vi|en`, `body_vi|en`; url `/notifications`; tenant/landlord audiences go to that side's inbox. Published with
+  no start or a start in the past it is delivered at once; otherwise `rental-management announcements-dispatch-due`
+  (`make dispatch-announcements`, idempotent, the worker runs it every minute) delivers it, and retries a failed delivery.
+- Validation rules (422): per language title and body both or neither (`title_body_pair`), one language at least (`one_language`), title <=150,
+  text <=2000, a channel (`nowhere_to_go`), button label and address together (`cta_incomplete`), safe address (`url_unsafe`: `/page` or `https://`),
+  `audience_empty`, `no_people` (a landlord with nobody to reach), roles within what the sender may name (`targeting.roles.N` `oneof`).
+- Deviation: the Go Kind constant is `KindAnnouncement` (the entity is `Announcement`), and the filter resolver is `ResolveFilter`.
+- Audit actions `announcement.created|updated|sent|unpublished|recalled` go to the audit port (no-op until the audit phase).
+- The demo seed adds one **draft** welcome popup by `admin@rental.test` (custom, registered within 14 days, once, button to `/find-rooms`).
+
+## Background jobs
+
+There is no cron to set up: `rental-management worker` (`make worker`, or `docker compose --profile worker up -d worker`) runs the
+jobs of the cron-style commands on their own schedules, in the foreground, until it gets SIGTERM/SIGINT. The commands keep working
+unchanged (for a one-off run or an external cron).
+
+| Job (same name as the command) | Schedule (ICT, UTC+7) |
+|---|---|
+| `announcements-dispatch-due` | every `WORKER_DISPATCH_INTERVAL` (1 minute) |
+| `subscriptions-expire` | daily 00:15 |
+| `notifications-prune` | daily 03:30 |
+| `invoices-send-automatic` | daily 07:00 |
+| `invoices-send-reminders` | daily 08:00 |
+
+- **Engine**: `pkg/schedule` (stdlib ticker every `WORKER_TICK`, 30 s). A job is due when its interval has passed since its last start, or
+  when the latest daily slot is after its last start; a worker that has never run a daily job waits for today's slot, and one that was down
+  for days runs it once. Jobs run one after another; a job times out after 10 minutes.
+- **Several workers are safe**: for each due job a worker takes the Redis lock `worker:lock:<job>` (`SET NX PX`, released with a
+  compare-and-delete script), reads the mark `worker:last:<job>` again, runs, and sets the mark (also after a failure, so a broken job
+  waits for its next slot instead of failing every tick). The jobs are idempotent as well.
+- **Logs**: one line per run, `job done` with `job`, `duration`, `result` (`sent 3 reminders`), or `job failed` with the error;
+  `worker started` and `worker stopped` frame them. On SIGTERM a running job is finished (up to its timeout) before `worker stopped`; the
+  compose service has `stop_grace_period: 90s` and execs the binary as PID 1 so that it receives the signal.
+- **Needs** `DATABASE_URL`, `REDIS_URL`, `DATA_ENCRYPTION_KEY` (the compose service sets them for development). The realtime pushes of
+  the notifications it creates go out through Redis Pub/Sub to the API instances. `make up` does not start it (profile `worker`).
+- **Trying it**: `WORKER_TICK=3s WORKER_DISPATCH_INTERVAL=10s WORKER_DAILY_INTERVAL=25s make worker` runs every job within seconds.
+- Not covered: there is no invitation-pruning job (expired invitation rows are kept; no command deletes them yet).
 
 ## Auth model
 
@@ -943,7 +1166,7 @@ A state conflict (the request is fine but clashes with the current data) is 409,
 
 `make help` lists everything. Main targets: `check` (gofmt check + vet + unit tests), `lint`, `fmt`, `fmt-check`,
 `tidy`, `sqlc` (regenerate `internal/adapter/persistence/postgres/sqlc`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
-`logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `expire-subscriptions`, `send-invoices`, `send-reminders`, `migrate-media`, `fetch-locations`, `dev`, `hooks`.
+`logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `expire-subscriptions`, `send-invoices`, `send-reminders`, `prune-notifications`, `dispatch-announcements`, `worker`, `migrate-media`, `fetch-locations`, `dev`, `hooks`.
 
 ## Git workflow
 
@@ -982,18 +1205,22 @@ demo seed; contract registration needs an approved listing).
 Done: phase 6, `invoice` (schema; periods, lines and meter readings, drafts, send, edit, delete, status, preview, billing periods,
 share links with a recoverable encrypted secret, the public bill, `already_paid`, the automatic-sending and reminder commands,
 meter history, demo seed). Its `PaymentLedger` port is implemented by phase 8.
-In progress: phase 7, contract invitations (a landlord offers a room by link). Batch 1 is done: the
-schema (`contract_invitations`, `invitation_email_blocks`), the invitation context with the exact lookup of an invitee and the
-email opt-out, `PUT /v1/me/preferences`, the per-account rate limit, the opt-out signer, the error codes and the
-`INVITATION_TTL_DAYS` setting. Batch 2 is done: the landlord's side (create with delivery by notification and email, list, get,
-copy the link again, new link, withdraw), the invitation email and its templates. Next batch: answering (preview, accept,
-decline, the invitee's inbox), the shared admission core, the room-deletion hook and the demo offer.
+Done: phase 7, contract invitations (schema; the invitee lookup and the email opt-out with `PUT /v1/me/preferences`; the landlord's
+offers by link with delivery, recoverable links, new link and withdraw; the invited person's preview, accept, decline and
+inbox; the shared contract admission core used by registration too; withdrawal of a deleted room's offers; the demo offer).
 Done: phase 8, `payment` (schema; the landlord's payment methods with encrypted settings, a tenant's part or full payment with proof
 pictures, confirm, reject, withdraw, the landlord's list, recorded payments, payment instructions with VietQR/MoMo links, signed
 proof links, the real payment ledger for invoices, the billing summary and payment filters on the contract lists, demo seed).
 
-Later phases (each module: migration, queries, service, handlers, tests): contract invitations,
-`notification` (announcements, popups), `report`, `stats`, `audit`, plus
+In progress: phase 9, `notification`. **Batch 5 is done**: the worker (`rental-management worker`, `pkg/schedule`, Redis locks; see [Background jobs](#background-jobs)). **Batch 1 is done**: the inbox (migration `00011`; the typed kind catalog; the one real `Notifier` behind
+the five contexts' ports; the eight inbox routes with per-role inboxes; the prune command; the demo messages). **Batch 2 is done**:
+announcements through the notification channel (migration `00012`, the `announcement_audience` SQL function, admin and landlord routes,
+reach, publish/unpublish/recall, scheduling with `announcements-dispatch-due`, the draft welcome popup). **Batch 3 is done**: popups
+(`/popups/active` + seen/dismiss/click with the pure visibility rules), announcement pictures, statistics with channel tabs, and the shared
+`/v1/media` route. **Batch 4 is done**: realtime push with server-sent events (ticket, stream, hub, Redis Pub/Sub, heartbeat, 15-minute streams).
+Still to come in this phase: the worker.
+
+Later phases (each module: migration, queries, service, handlers, tests): `notification` (announcements, popups), `report`, `stats`, `audit`, plus
 admin user management, landlord applications, manager hand-over and invitations, and social login.
 
 Pure rules of the Laravel project to port (as Go table tests, taking its `tests/Unit` cases as the starting point):
@@ -1020,7 +1247,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 
 Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/rooms`, `/rooms/{id}`,
 `/contract-invitations`, `/invoices` (done), `/invoices/{id}/payments` (done), `/my/payment-methods` (done), `/managers`; account
-`/me/invoices`, `/me/notifications`; public `/public/rooms` (done); admin
+`/me/invoices`, `/notifications` (done); public `/public/rooms` (done); admin
 `/admin/users`, `/admin/landlord-applications`, `/admin/announcements`,
 `/admin/audit`; others `/reports`, `/stats/landlord`, `/stats/platform`.
 
@@ -1036,6 +1263,19 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
 
+- **Notifications (inbox, announcements)**: the inbox and the announcements' notification channel exist. Popups, pictures and
+  statistics exist (no cache on the popup audience check or the statistics; popups cost up to 20 indexed audience lookups per app open).
+  The **worker** is a later batch. Realtime: one shared Pub/Sub channel (every instance sees every event; shard by user hash if it ever
+  matters), no replay of missed events (the web reloads on `ready`), the cap of streams per person is per instance, a revoked session keeps
+  its open stream until it expires (at most `REALTIME_STREAM_MAX_AGE`), and nothing but notifications is pushed yet (reports will add a topic). Pictures are not checked for sensitive content on the server, and impressions are
+  one row per person (no per-view history, so no "views per day"). The
+  `AuditRecorder` port is declared and no-op. Announcements have no `my_managers` audience (no managers yet), `active_within_days`
+  reads `user_sessions.last_used_at`, and a delivery that failed is retried only by `announcements-dispatch-due` (the worker, every minute). There is **no email** for any notification (the contexts' own mail
+  ports are separate and mostly no-ops). The daily commands run in the worker.
+  Messages of kinds no context sends yet (reports, managers, landlord applications...) are in the catalog but nothing creates
+  them. `audience` is not exposed in the message JSON (the web does not need it: the inbox is already filtered). The inbox has
+  no "mute a kind" setting and no per-user rate limit (the sender side bounds what is created).
+
 - **Rooms (property)**: the plan port (it receives only the `ctx`) is the plan context's (see below); the room guards and observer are the contract and listing contexts' (combined in `bridges.go`).
   Room pictures stay in storage when the room is soft-deleted (history); orphaned files from a crash between the
   storage write and the commit are not swept (no background job yet). Copying a building with many rooms that have
@@ -1049,19 +1289,16 @@ as each Go module lands; the Laravel API keeps serving the web until then.
   XMP chunks removed. The EXIF orientation of a directly uploaded JPEG is not applied (the web always sends an upright
   WebP). Thumbnails are JPEG, made at upload time without a queue.
 
-- **Contracts**: the `Notifier` and `AuditRecorder` ports are no-op defaults (nobody is notified, nothing is
-  stored); the use cases call them where Laravel does and the unit tests check the calls, so the notification and audit phases
-  only implement the ports (the `PlanLimits` port is the plan context's). No emails are sent for contracts. Not built yet: contract invitations (a
-  landlord cannot create a contract directly: it is the tenant's registration, or later an invitation the tenant accepts), the
-  manager (room manager) access, the landlord's `billing` fields beyond `unpaid_invoices` (`unbilled_periods`, `next_period`, `last_invoice`), the
+- **Contracts**: the `Notifier` is the inbox's (see [Notifications](#notifications-the-inbox)); the `AuditRecorder` port is a no-op default (nothing is
+  stored); the use cases call them where Laravel does and the unit tests check the calls, so the audit phase
+  only implements the port (the `PlanLimits` port is the plan context's). No emails are sent for contracts. Not built yet: the manager (room manager) access, the landlord's `billing` fields beyond `unpaid_invoices` (`unbilled_periods`, `next_period`, `last_invoice`), the
   `my_registration` of find rooms (which rooms the viewer already registered for; the contract context can add it). Registration does not check that the landlord still holds the
   landlord role, and a tenant's list shows contracts on rooms the landlord deleted (history). The renter's detail lists the
   room's charges and pictures and a `billing` summary, but not the bills themselves.
 - **Plans**: there is **no payment gateway**, so a paid plan is a request an admin activates by hand once the money arrived
-  (nothing renews by itself; a subscription simply lapses at its end). The `Notifier` and `AuditRecorder` ports are no-op
-  defaults: admins are not told of a request, users not of an activation, and `subscription.*`/`plan.saved` are not stored (the
-  use cases call the ports where Laravel does and the unit tests check the calls). **There is no scheduler**: nothing runs
-  `subscriptions-expire` by itself, so cron (or the orchestrator) must call it daily; a lapsed subscription is ignored by
+  (nothing renews by itself; a subscription simply lapses at its end). The `Notifier` is the inbox's (admins are told of a request, users of an activation) and the `AuditRecorder` port is a no-op
+  default: `subscription.*`/`plan.saved` are not stored (the
+  use cases call the ports where Laravel does and the unit tests check the calls). `subscriptions-expire` runs daily in the worker (without it nothing marks them expired); a lapsed subscription is ignored by
   the limits and the plan screens even before it runs, so a late run only leaves a stale `active` row. `GET /v1/plans` needs a
   signed in caller (as in Laravel), so a guest cannot see the pricing yet; the `UserResource.plan` badge, the `auto_invoicing`
   feature (no invoices yet), a `max_active_listings` limit (the listing use cases check a `PlanLimits` port that no plan sets yet) and the clean-up of the plan of an
@@ -1074,32 +1311,32 @@ as each Go module lands; the Laravel API keeps serving the web until then.
   listing (Laravel only hides the room from find rooms); another landlord's listing is a 404 (not a 403); a room that is not
   the landlord's (or is deleted) is a 422 on `room_id`; deleting a waiting listing is allowed (as in Laravel: only a live
   one has to be taken down first); there is no server-side cache of the public list (a `Cache-Control: public, max-age=60`
-  header says the same to browsers and shared caches). The `Notifier` and `AuditRecorder` ports are no-op defaults (the use
+  header says the same to browsers and shared caches). The `Notifier` is the inbox's and the `AuditRecorder` port is a no-op default (the use
   cases call them where Laravel does and the unit tests check the calls); no emails are sent. A deleted room keeps its
   non-open listings (history). Listings and rooms are checked together only at write time: a room whose landlord loses the
   landlord role simply stops being offered. Not built: the limit of open listings per plan, listings drafted by a room manager,
   the 1000-room find-rooms demo seed.
 - **Payments**: there is **no online gateway** (a driver seam exists; every payment is checked by hand by the landlord), no
-  manager access (a manager with `payments.review`), and the notification, audit and `PaymentMailer` ports are no-ops
-  (the use cases call them where Laravel does and the unit tests check the calls): nobody is told of a payment or its decision,
-  nothing is stored in an audit trail, no email goes out. A bill passed on by link has no payer account, so only the landlord
+  manager access (a manager with `payments.review`), and the audit and `PaymentMailer` ports are no-ops
+  (the use cases call them where Laravel does and the unit tests check the calls): payments and their decisions reach the inbox,
+  but nothing is stored in an audit trail and no email goes out. A bill passed on by link has no payer account, so only the landlord
   can record money on it. Go has no WebP encoder, so a proof sent as PNG/JPEG is stored as JPEG (WebP as sent) even though its
   link ends in `.webp`; thumbnails are made at upload (Laravel's `payments:generate-proof-thumbnails` has nothing to do).
   The files of a deleted bill or a withdrawn payment are removed best effort (a failure is logged, an unreferenced private file
   is left); a proof written before a transaction that then rolls back is removed again, but a crash between the two leaves an
   orphan (no sweeper). A ledger built for the daily invoice commands has no file store (they never delete bills). The
   bank list is fixed in the domain (`domain/payment.Banks`); `GET /config` does not exist yet to hand it to the web.
-- **Invoices**: see [Invoices](#invoices). The notification, audit and email ports are no-ops: nobody is told
-  of a bill (so `delivery: app` only means "visible to the tenant's account"), nothing is stored in an audit trail and no
-  `InvoiceMail` goes out; the unit tests check the calls. Nothing runs the daily commands by itself (cron must call
-  `send-invoices` and `send-reminders`). Not built: the tenant's own invoice list (`/me/invoices`), bulk bill creation, a plan limit for this feature, room managers' access.
-- **Invitations (batches 1 and 2)**: the invitee lookup, the opt-out and the landlord's side exist; **nobody can answer an
-  invitation yet** (preview, accept, decline and the invitee's inbox are the next batch), so an offer only waits, expires or is
-  withdrawn, and a deleted room does not yet withdraw its offers. The notification and audit ports are no-op defaults (nothing
-  is stored; `delivery.app` is still truthful because the offer sits in the account's inbox once that route exists). The
-  invitation email is Vietnamese only (no account language is known) and is sent synchronously after the commit; expired
-  offers and their sealed secrets are not pruned; the lookup has no avatar. An account's own address is also checked against
-  the opt-out list before it is mailed (the plan only checked addresses without an account).
+- **Invoices**: see [Invoices](#invoices). The audit and email ports are no-ops: bills reach the tenant's inbox (`delivery: app`), nothing is stored in an audit trail and no
+  `InvoiceMail` goes out; the unit tests check the calls. The worker runs the daily commands (`send-invoices`, `send-reminders`). Not built: the tenant's own invoice list (`/me/invoices`), bulk bill creation, a plan limit for this feature, room managers' access.
+- **Invitations**: the audit port is a no-op default and the invitation notifications go to the inbox through the contract context (`delivery.app` is truthful
+  because the offer sits in the account's inbox, `GET /v1/me/contract-invitations`). The invitation email is Vietnamese only (no
+  account language is known) and is sent synchronously after the commit; expired offers and their sealed secrets are never pruned
+  (no command yet); the lookup has no avatar. An account's own address is also checked against the opt-out list before it is
+  mailed. **Deviations from the Laravel API, on purpose**: every bad link is a 404 `invitation.invalid` (Laravel used a 422), and
+  an offer does not need a listing, a future start date or the tenant's registration cap (D9 of the plan). Not built:
+  manager-drafted offers (`created_by_id`, status `awaiting_approval` have their seam but nothing creates them and there are no
+  approve/reject routes), "block a sender". A `Preview` does not lock the room, so a preview racing a room deletion may show an
+  offer that the next call refuses (accept and decline lock and refuse it).
 - **Rehash on login** is not implemented: if the argon2 parameters change, old hashes stay until the password changes.
 - No rate limit per *account* on password change (only per client address, 5/min).
 - Graceful shutdown (including waiting for emails still being sent) is implemented but its log line was not observed.

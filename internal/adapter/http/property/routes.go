@@ -48,7 +48,7 @@ func MountProperty(v1 *gin.RouterGroup, b *BuildingHandler, r *RoomHandler, m *M
 	rooms.PUT("/:id/media/:media_id/file", upload, can("rooms.update"), m.ReplaceFile(true))
 	rooms.DELETE("/:id/media/:media_id", can("rooms.update"), m.Delete(true))
 
-	// The pictures themselves are public: an <img> tag cannot send a bearer token, and the names are unguessable.
-	v1.GET("/media/*key", m.Serve)
-	v1.HEAD("/media/*key", m.Serve)
+	// The pictures themselves are public (an <img> tag cannot send a bearer token, and the names are unguessable), and
+	// the route is shared with the other contexts that store pictures, so cmd/rental-management mounts it
+	// (MediaHandler.Serve for the keys of this context).
 }

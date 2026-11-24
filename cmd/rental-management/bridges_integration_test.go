@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	contracthttp "rental-management/internal/adapter/http/contract"
 	"rental-management/internal/adapter/http/httpx"
 	listinghttp "rental-management/internal/adapter/http/listing"
+	notificationhttp "rental-management/internal/adapter/http/notification"
 	propertyhttp "rental-management/internal/adapter/http/property"
 	"rental-management/internal/adapter/http/testenv"
 	"rental-management/internal/domain/identity"
@@ -55,6 +57,7 @@ type bridgeEnv struct {
 	t         *testing.T
 	pool      *pgxpool.Pool
 	engine    *gin.Engine
+	inbox     notifications
 	plans     plans
 	offers    listings
 	rentals   contracts
@@ -63,6 +66,7 @@ type bridgeEnv struct {
 	landlord2 uuid.UUID
 	tenant    uuid.UUID
 	admin     uuid.UUID
+	super     uuid.UUID
 }
 
 func principalOf(id uuid.UUID, role string) authz.Principal {
@@ -85,7 +89,7 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 			t.Fatal(err)
 		}
 	}
-	if _, err := e.pool.Exec(ctx, `INSERT INTO roles (code, seniority, is_staff) VALUES ('landlord', 3, false), ('tenant', 5, false)`); err != nil {
+	if _, err := e.pool.Exec(ctx, `INSERT INTO roles (code, seniority, is_staff) VALUES ('super_admin', 1, true), ('admin', 2, true), ('landlord', 3, false), ('tenant', 5, false)`); err != nil {
 		t.Fatal(err)
 	}
 	user := func(email string, roles ...string) uuid.UUID {
@@ -101,16 +105,18 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 		return id
 	}
 	e.landlord, e.tenant = user("l@example.vn", "landlord", "tenant"), user("t@example.vn", "tenant")
-	e.landlord2, e.admin = user("l2@example.vn", "landlord", "tenant"), user("a@example.vn")
+	e.landlord2, e.admin = user("l2@example.vn", "landlord", "tenant"), user("a@example.vn", "admin")
+	e.super = user("s@example.vn", "super_admin")
 
 	cfg := config.Config{
-		MediaMaxUploadBytes: 1 << 20, MediaMaxDimension: 2048, MediaThumbnailMaxSize: 480, ImageProcessingConcurrency: 2, MediaMaxPerOwner: 10,
+		MediaMaxUploadBytes: 1 << 20, MediaMaxDimension: 2048, AnnouncementImageMaxPlatform: 10, AnnouncementImageMaxLandlord: 3, MediaThumbnailMaxSize: 480, ImageProcessingConcurrency: 2, MediaMaxPerOwner: 10,
 	}
 	log := slog.New(slog.DiscardHandler)
 	files := storage.NewMemory("http://files.test/v1/media")
-	e.plans = newPlans(log, e.pool)
-	e.offers = newListings(log, e.pool, e.plans)
-	e.rentals = newContracts(cfg, log, e.pool, e.plans, invitationPorts{})
+	e.inbox = newNotifications(cfg, log, e.pool, files, nil)
+	e.plans = newPlans(log, e.pool, e.inbox.deliveries)
+	e.offers = newListings(log, e.pool, e.plans, e.inbox.deliveries)
+	e.rentals = newContracts(cfg, log, e.pool, e.plans, invitationPorts{}, e.inbox.deliveries)
 	e.props = newProperty(cfg, log, e.pool, files, e.rentals, e.offers, e.plans)
 
 	catalog, err := i18n.New()
@@ -121,20 +127,29 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 		"landlord":  principalOf(e.landlord, authz.RoleLandlord),
 		"landlord2": principalOf(e.landlord2, authz.RoleLandlord),
 		"tenant":    principalOf(e.tenant, authz.RoleTenant),
-		"admin":     principalOf(e.admin, authz.RoleAdmin),
+		// the landlord account acting in its other role: the same person, the other inbox
+		"landlord-as-tenant": principalOf(e.landlord, authz.RoleTenant),
+		"admin":              principalOf(e.admin, authz.RoleAdmin),
+		"super":              principalOf(e.super, authz.RoleSuperAdmin),
 	}
 	e.engine = gin.New()
 	e.engine.Use(httpx.RequestID(log), httpx.Locale(catalog), httpx.Recover())
 	binder := httpx.NewBinder()
 	v1 := e.engine.Group("/v1")
+	media := propertyhttp.NewMediaHandler(e.props.media, files, binder, cfg.MediaMaxUploadBytes)
 	propertyhttp.MountProperty(v1,
-		propertyhttp.NewBuildingHandler(e.props.buildings, files, binder), propertyhttp.NewRoomHandler(e.props.rooms, files, binder),
-		propertyhttp.NewMediaHandler(e.props.media, files, binder, cfg.MediaMaxUploadBytes), auth, allowAll{})
+		propertyhttp.NewBuildingHandler(e.props.buildings, files, binder), propertyhttp.NewRoomHandler(e.props.rooms, files, binder), media, auth, allowAll{})
+	images := notificationhttp.NewImageHandler(e.inbox.images, files, binder, cfg.MediaMaxUploadBytes)
+	mountMedia(v1, media.Serve, images.Serve)
 	contracthttp.MountContracts(v1,
 		contracthttp.NewContractHandler(e.rentals.contracts, files, binder), contracthttp.NewRentalHandler(e.rentals.rentals, files),
 		contracthttp.NewInvitationHandler(e.rentals.invitations, e.rentals.answers, contractuc.ClockFunc(time.Now), files, binder), auth, allowAll{})
 	listinghttp.MountListings(v1,
 		listinghttp.NewListingHandler(e.offers.listings, files, binder), listinghttp.NewReviewHandler(e.offers.reviews, files, binder), auth, allowAll{})
+	notificationhttp.MountNotifications(v1, notificationhttp.NewInboxHandler(e.inbox.inbox, binder), auth)
+	notificationhttp.MountPopups(v1, notificationhttp.NewPopupHandler(e.inbox.popups, files), auth, allowAll{})
+	notificationhttp.MountAnnouncements(v1, notificationhttp.NewAnnouncementHandler(e.inbox.announcements, files, binder), images,
+		notificationhttp.NewStatsHandler(e.inbox.stats), auth, allowAll{})
 	listinghttp.MountSearch(v1, listinghttp.NewOfferHandler(e.offers.offers, files), auth, allowAll{})
 	return e
 }
@@ -423,5 +438,40 @@ func TestSeedDemoGivesTheDemoTenantContractsAndIsSafeToRepeat(t *testing.T) {
 	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM contracts WHERE tenant_id IS NULL`).Scan(&blank)
 	if blank != 0 {
 		t.Errorf("no blank contract beside the demo contract, got %d", blank)
+	}
+}
+
+// Deleting a room through the property API withdraws the invitations still waiting on it, and leaves the answered ones.
+func TestDeletingARoomWithdrawsItsOpenInvitations(t *testing.T) {
+	e := newBridgeEnv(t)
+	ctx := context.Background()
+	r := e.newRoom("P1", "available")
+	insert := func(status string, hash string) uuid.UUID {
+		var id uuid.UUID
+		err := e.pool.QueryRow(ctx, `
+			INSERT INTO contract_invitations (room_id, landlord_id, status, token_hash, link_token_sealed, expires_at, price_vnd, starts_on, answered_at)
+			VALUES ($1, $2, $3, $4, CASE WHEN $3 = 'pending' THEN 'sealed' END, now() + interval '7 days', 2000000, current_date,
+			        CASE WHEN $3 = 'pending' THEN NULL ELSE now() END)
+			RETURNING id`, r.ID, e.landlord, status, strings.Repeat(hash, 64)).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	open, declined := insert("pending", "a"), insert("declined", "b")
+
+	testenv.ExpectStatus(t, e.call(http.MethodDelete, "/v1/rooms/"+r.ID.String(), nil, "landlord"), http.StatusNoContent)
+
+	state := func(id uuid.UUID) (status string, sealed *string) {
+		if err := e.pool.QueryRow(ctx, `SELECT status, link_token_sealed FROM contract_invitations WHERE id = $1`, id).Scan(&status, &sealed); err != nil {
+			t.Fatal(err)
+		}
+		return status, sealed
+	}
+	if st, sealed := state(open); st != "revoked" || sealed != nil {
+		t.Errorf("the waiting offer is withdrawn: %s %v", st, sealed)
+	}
+	if st, _ := state(declined); st != "declined" {
+		t.Errorf("an answered offer stays as it was: %s", st)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	invoicehttp "rental-management/internal/adapter/http/invoice"
 	listinghttp "rental-management/internal/adapter/http/listing"
 	locationhttp "rental-management/internal/adapter/http/location"
+	notificationhttp "rental-management/internal/adapter/http/notification"
 	paymenthttp "rental-management/internal/adapter/http/payment"
 	planhttp "rental-management/internal/adapter/http/plan"
 	propertyhttp "rental-management/internal/adapter/http/property"
@@ -41,6 +42,7 @@ import (
 	locationpg "rental-management/internal/adapter/persistence/postgres/location"
 	planpg "rental-management/internal/adapter/persistence/postgres/plan"
 	propertypg "rental-management/internal/adapter/persistence/postgres/property"
+	"rental-management/internal/adapter/realtime"
 	redisstore "rental-management/internal/adapter/redis"
 	"rental-management/internal/adapter/security"
 	contractuc "rental-management/internal/usecase/contract"
@@ -49,6 +51,7 @@ import (
 	invoiceuc "rental-management/internal/usecase/invoice"
 	listinguc "rental-management/internal/usecase/listing"
 	locationuc "rental-management/internal/usecase/location"
+	notificationuc "rental-management/internal/usecase/notification"
 	planuc "rental-management/internal/usecase/plan"
 	propertyuc "rental-management/internal/usecase/property"
 	"rental-management/pkg/db"
@@ -111,8 +114,21 @@ func runAPI(ctx context.Context) error {
 		return err
 	}
 	defer closeFiles()
-	pricing := newPlans(log, pool)
-	offers := newListings(log, pool, pricing)
+	// Realtime: every instance listens to one Redis channel and hands the events to the streams it holds.
+	hub := realtime.NewHub(cfg.RealtimeMaxStreamsPerUser)
+	broadcaster := redisstore.NewBroadcaster(rdb, cfg.RedisKeyPrefix, log)
+	listenCtx, stopListening := context.WithCancel(ctx)
+	defer stopListening()
+	go func() {
+		if err := broadcaster.Listen(listenCtx, hub.Deliver); err != nil {
+			log.Error("listen for realtime events", "error", err)
+		}
+	}()
+	streams := notificationhttp.NewStreamHandler(redisstore.NewStreamTickets(rdb, cfg.RedisKeyPrefix, cfg.RealtimeTicketTTL), hub,
+		notificationhttp.StreamSettings{TicketTTL: cfg.RealtimeTicketTTL, Heartbeat: cfg.RealtimeHeartbeat, MaxAge: cfg.RealtimeStreamMaxAge})
+	inbox := newNotifications(cfg, log, pool, files, realtimePusher{broadcast: broadcaster})
+	pricing := newPlans(log, pool, inbox.deliveries)
+	offers := newListings(log, pool, pricing, inbox.deliveries)
 	sealer, err := newSealer(cfg)
 	if err != nil {
 		return err
@@ -127,16 +143,18 @@ func runAPI(ctx context.Context) error {
 	}
 	rentals := newContracts(cfg, log, pool, pricing, invitationPorts{
 		invitees: invitees, sealer: sealer, mailer: invitationMailer{m: mailadapter.NewInvitationMailer(mailer, renderer, invitees.OptOutURL)},
-	})
+	}, inbox.deliveries)
 	properties := newProperty(cfg, log, pool, files, rentals, offers, pricing)
-	billing, err := newInvoices(cfg, log, pool, pricing, sealer)
+	billing, err := newInvoices(cfg, log, pool, pricing, sealer, inbox.deliveries)
 	if err != nil {
 		return err
 	}
-	paying, err := newPayments(cfg, log, pool, files, sealer, billing)
+	paying, err := newPayments(cfg, log, pool, files, sealer, billing, inbox.deliveries)
 	if err != nil {
 		return err
 	}
+
+	announcementImages := notificationhttp.NewImageHandler(inbox.images, files, httpx.NewBinder(), cfg.MediaMaxUploadBytes)
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
@@ -145,6 +163,7 @@ func runAPI(ctx context.Context) error {
 			Catalog:        catalog,
 			RequestTimeout: cfg.RequestTimeout,
 			CORSOrigins:    cfg.CORSAllowedOrigins,
+			LongLived:      []string{notificationhttp.StreamPath},
 			Ready:          ready,
 			Modules: []func(*gin.RouterGroup){
 				func(v1 *gin.RouterGroup) {
@@ -156,11 +175,11 @@ func runAPI(ctx context.Context) error {
 				},
 				func(v1 *gin.RouterGroup) {
 					binder := httpx.NewBinder()
+					media := propertyhttp.NewMediaHandler(properties.media, files, binder, cfg.MediaMaxUploadBytes)
 					propertyhttp.MountProperty(v1,
 						propertyhttp.NewBuildingHandler(properties.buildings, files, binder),
-						propertyhttp.NewRoomHandler(properties.rooms, files, binder),
-						propertyhttp.NewMediaHandler(properties.media, files, binder, cfg.MediaMaxUploadBytes),
-						authenticator, limiter)
+						propertyhttp.NewRoomHandler(properties.rooms, files, binder), media, authenticator, limiter)
+					mountMedia(v1, media.Serve, announcementImages.Serve)
 				},
 				func(v1 *gin.RouterGroup) {
 					contracthttp.MountContracts(v1,
@@ -191,6 +210,13 @@ func runAPI(ctx context.Context) error {
 						authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
+					notificationhttp.MountRealtime(v1, streams, authenticator, limiter)
+					notificationhttp.MountNotifications(v1, notificationhttp.NewInboxHandler(inbox.inbox, httpx.NewBinder()), authenticator)
+					notificationhttp.MountPopups(v1, notificationhttp.NewPopupHandler(inbox.popups, files), authenticator, limiter)
+					notificationhttp.MountAnnouncements(v1, notificationhttp.NewAnnouncementHandler(inbox.announcements, files, httpx.NewBinder()),
+						announcementImages, notificationhttp.NewStatsHandler(inbox.stats), authenticator, limiter)
+				},
+				func(v1 *gin.RouterGroup) {
 					invitationhttp.MountInvitees(v1, invitationhttp.NewInviteeHandler(invitees, httpx.NewBinder()), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
@@ -203,6 +229,8 @@ func runAPI(ctx context.Context) error {
 		WriteTimeout:      cfg.RequestTimeout + 5*time.Second, // room to write the 503 of a timed-out request
 		IdleTimeout:       60 * time.Second,
 	}
+
+	srv.RegisterOnShutdown(hub.Close) // open streams would otherwise hold the drain until the timeout
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -284,12 +312,15 @@ type plans struct {
 	seeder        *planuc.Seeder
 }
 
-// newPlans builds the plan use cases. The notification and audit ports keep their no-op defaults until those contexts
-// exist.
-func newPlans(log *slog.Logger, pool *pgxpool.Pool) plans {
+// newPlans builds the plan use cases. Their messages go through n (nil: nobody is told); the audit port keeps its
+// no-op default until that context exists.
+func newPlans(log *slog.Logger, pool *pgxpool.Pool, n *notificationuc.Deliveries) plans {
 	deps := planuc.Deps{
 		Tx: postgres.NewTxManager(pool), Plans: planpg.NewPlanRepository(pool), Subs: planpg.NewSubscriptionRepository(pool),
 		Accounts: planpg.NewAccounts(pool), Usage: planpg.NewUsage(pool), Clock: planuc.ClockFunc(time.Now), Log: log,
+	}
+	if n != nil {
+		deps.Notifier = planNotifier{m: n}
 	}
 	return plans{
 		catalog: planuc.NewPlans(deps), subscriptions: planuc.NewSubscriptions(deps), limits: planuc.NewLimits(deps),
@@ -308,13 +339,17 @@ type listings struct {
 }
 
 // newListings builds the listing use cases. The search priority comes from the plan use cases; no plan limits the
-// number of listings yet and the notification and audit ports keep their no-op defaults until those contexts exist.
-func newListings(log *slog.Logger, pool *pgxpool.Pool, p plans) listings {
+// number of listings yet, their messages go through n (nil: nobody is told) and the audit port keeps its no-op default
+// until that context exists.
+func newListings(log *slog.Logger, pool *pgxpool.Pool, p plans, n *notificationuc.Deliveries) listings {
 	rooms := listingpg.NewRoomReader(pool)
 	deps := listinguc.Deps{
 		Tx: postgres.NewTxManager(pool), Listings: listingpg.NewListingRepository(pool), Rooms: rooms,
 		Offers: listingpg.NewOfferRepository(pool), Seed: rooms, Priority: searchPriority{limits: p.limits},
 		Clock: listinguc.ClockFunc(time.Now), Log: log,
+	}
+	if n != nil {
+		deps.Notifier = listingNotifier{m: n}
 	}
 	return listings{
 		listings: listinguc.NewListings(deps), reviews: listinguc.NewReviews(deps), offers: listinguc.NewOffers(deps),
@@ -362,14 +397,17 @@ func newInvitees(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*invi
 // newInvoices builds the invoice use cases on Postgres. The contracts and the room charges are read-only views in the
 // invoice database adapter, the plan feature (automatic invoicing) comes from the plan use cases (see bridges.go), the
 // secrets of share links are encrypted with the sealer, the payment ledger is the payment use cases' (see
-// bridges_payment.go; newPayments gives it its file store), and the notification, audit and mail ports keep their
-// no-op defaults until those contexts exist.
-func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, sealer *secretbox.Box) (invoices, error) {
+// bridges_payment.go; newPayments gives it its file store), the messages go through n (nil: nobody is told), and the
+// audit and mail ports keep their no-op defaults until those contexts exist.
+func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, sealer *secretbox.Box, n *notificationuc.Deliveries) (invoices, error) {
 	ledger := newPaymentLedger(cfg, log, pool)
 	deps := invoiceuc.Deps{
 		Tx: postgres.NewTxManager(pool), Invoices: invoicepg.NewInvoiceRepository(pool), Contracts: invoicepg.NewContractReader(pool),
 		Charges: invoicepg.NewChargeReader(pool), Plans: planFeatures{limits: p.limits}, Tokens: security.ShareTokens{}, Sealer: sealer,
 		Ledger: ledger, Clock: invoiceuc.ClockFunc(time.Now), Log: log,
+	}
+	if n != nil {
+		deps.Notifier = invoiceNotifier{m: n}
 	}
 	opts := invoiceuc.Options{
 		DueDays: cfg.InvoiceDueDays, ShareTTL: time.Duration(cfg.InvoiceShareTTLDays) * 24 * time.Hour,
@@ -402,9 +440,9 @@ type invitationPorts struct {
 
 // newContracts builds the contract use cases on Postgres. The room status goes through property's use case, which is
 // built after this one (see newProperty); the plan limits come from the plan use cases; the invitees come from the
-// invitation use cases (see bridges.go); the notification and audit ports keep their no-op defaults until those
-// contexts exist.
-func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, inv invitationPorts) contracts {
+// invitation use cases (see bridges.go); the messages go through n (nil: nobody is told) and the audit port keeps its
+// no-op default until that context exists.
+func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, inv invitationPorts, n *notificationuc.Deliveries) contracts {
 	status := &roomStatus{}
 	reader := contractpg.NewRoomReader(pool)
 	deps := contractuc.Deps{
@@ -412,6 +450,9 @@ func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p pla
 		Plans: planLimits{limits: p.limits}, Clock: contractuc.ClockFunc(time.Now), Log: log,
 		Invitations: contractpg.NewInvitationRepository(pool), Invitees: inv.invitees, Tokens: security.ShareTokens{},
 		Sealer: inv.sealer, Mailer: inv.mailer,
+	}
+	if n != nil {
+		deps.Notifier = contractNotifier{m: n}
 	}
 	opts := contractuc.Options{InvitationTTL: time.Duration(cfg.InvitationTTLDays) * 24 * time.Hour, WebURL: cfg.WebURL}
 	return contracts{

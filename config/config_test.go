@@ -311,6 +311,21 @@ func TestDataKeyAndInvoiceSettings(t *testing.T) {
 	}
 }
 
+func TestNotificationRetention(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil || cfg.NotificationRetentionDays != 90 {
+		t.Fatalf("default 90 days expected: %d %v", cfg.NotificationRetentionDays, err)
+	}
+	if cfg, err = parse(map[string]string{"NOTIFICATION_RETENTION_DAYS": "30"}); err != nil || cfg.NotificationRetentionDays != 30 {
+		t.Errorf("30 days expected: %d %v", cfg.NotificationRetentionDays, err)
+	}
+	for _, v := range []string{"0", "-1", "3651"} {
+		if _, err := parse(map[string]string{"NOTIFICATION_RETENTION_DAYS": v}); err == nil {
+			t.Errorf("%s must be refused", v)
+		}
+	}
+}
+
 func TestPaymentProofSettings(t *testing.T) {
 	cfg, err := parse(map[string]string{})
 	if err != nil {
@@ -332,5 +347,55 @@ func TestPaymentProofSettings(t *testing.T) {
 		if _, err := parse(vars); err == nil {
 			t.Errorf("%s must be refused", name)
 		}
+	}
+}
+
+func TestAnnouncementImageLimits(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil || cfg.AnnouncementImageMaxPlatform != 10 || cfg.AnnouncementImageMaxLandlord != 3 {
+		t.Fatalf("defaults 10 and 3 expected: %+v %v", cfg, err)
+	}
+	for _, v := range []string{"0", "21", "-1"} {
+		if _, err := parse(map[string]string{"ANNOUNCEMENT_IMAGE_MAX_LANDLORD": v}); err == nil {
+			t.Errorf("%s must be refused", v)
+		}
+	}
+}
+
+func TestRealtimeSettings(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil || cfg.RealtimeTicketTTL != time.Minute || cfg.RealtimeHeartbeat != 25*time.Second ||
+		cfg.RealtimeStreamMaxAge != 15*time.Minute || cfg.RealtimeMaxStreamsPerUser != 5 {
+		t.Fatalf("defaults 60s, 25s, 15m and 5 expected: %+v %v", cfg, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"zero ticket ttl":  {"REALTIME_TICKET_TTL": "0s"},
+		"zero heartbeat":   {"REALTIME_HEARTBEAT": "0s"},
+		"zero max age":     {"REALTIME_STREAM_MAX_AGE": "0s"},
+		"no streams":       {"REALTIME_MAX_STREAMS_PER_USER": "0"},
+		"too many streams": {"REALTIME_MAX_STREAMS_PER_USER": "101"},
+	} {
+		if _, err := parse(vars); err == nil {
+			t.Errorf("%s must be refused", name)
+		}
+	}
+}
+
+func TestWorkerSettings(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil || cfg.WorkerTick != 30*time.Second || cfg.WorkerDispatchInterval != time.Minute || cfg.WorkerDailyInterval != 0 {
+		t.Fatalf("defaults 30s, 1m and 0 expected: %+v %v", cfg, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"zero tick":      {"WORKER_TICK": "0s"},
+		"zero dispatch":  {"WORKER_DISPATCH_INTERVAL": "0s"},
+		"negative daily": {"WORKER_DAILY_INTERVAL": "-1s"},
+	} {
+		if _, err := parse(vars); err == nil {
+			t.Errorf("%s must be refused", name)
+		}
+	}
+	if cfg, err := parse(map[string]string{"WORKER_DAILY_INTERVAL": "2m"}); err != nil || cfg.WorkerDailyInterval != 2*time.Minute {
+		t.Fatalf("a daily interval must be accepted: %+v %v", cfg, err)
 	}
 }

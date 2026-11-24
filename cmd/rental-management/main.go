@@ -1,7 +1,8 @@
 // Command rental-management is the single binary of the backend. `rental-management api` serves HTTP; `rental-management migrate [up|down|status]`
 // and `rental-management seed [-demo]` manage the database; `rental-management media-upload` copies the pictures of MEDIA_DIR into the S3 bucket;
 // `rental-management subscriptions-expire` marks lapsed subscriptions as expired, `rental-management invoices-send-automatic` sends the bills
-// of plans with automatic invoicing and `rental-management invoices-send-reminders` reminds people of bills about to fall due (run all three daily).
+// of plans with automatic invoicing and `rental-management invoices-send-reminders` reminds people of bills about to fall due and `rental-management notifications-prune` deletes old
+// notifications (run all four daily) and `rental-management announcements-dispatch-due` sends the announcements whose start has come (run it every minute); `rental-management worker` runs all of those jobs itself on their schedules, so no cron is needed.
 package main
 
 import (
@@ -14,7 +15,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: rental-management api|migrate|seed|media-upload|subscriptions-expire|invoices-send-automatic|invoices-send-reminders")
+		fmt.Fprintln(os.Stderr, "usage: rental-management api|migrate|seed|media-upload|subscriptions-expire|invoices-send-automatic|invoices-send-reminders|notifications-prune|announcements-dispatch-due|worker")
 		os.Exit(2)
 	}
 
@@ -57,8 +58,23 @@ func main() {
 			fmt.Fprintln(os.Stderr, "rental-management:", err)
 			os.Exit(1)
 		}
+	case "announcements-dispatch-due":
+		if err := runDispatchAnnouncements(ctx, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "rental-management:", err)
+			os.Exit(1)
+		}
+	case "worker":
+		if err := runWorker(ctx, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "rental-management:", err)
+			os.Exit(1)
+		}
+	case "notifications-prune":
+		if err := runPruneNotifications(ctx, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "rental-management:", err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "rental-management: unknown command %q (want api|migrate|seed|media-upload|subscriptions-expire|invoices-send-automatic|invoices-send-reminders)\n", cmd)
+		fmt.Fprintf(os.Stderr, "rental-management: unknown command %q (want api|migrate|seed|media-upload|subscriptions-expire|invoices-send-automatic|invoices-send-reminders|notifications-prune|announcements-dispatch-due|worker)\n", cmd)
 		os.Exit(2)
 	}
 }

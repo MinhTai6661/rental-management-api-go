@@ -116,6 +116,27 @@ type Config struct {
 	// InvitationTTLDays is how long an invitation (a room offered by link) can be answered; 1 to 90.
 	InvitationTTLDays int `env:"INVITATION_TTL_DAYS" envDefault:"7"`
 
+	// NotificationRetentionDays is how long a notification is kept before `notifications-prune` deletes it; 1 to 3650.
+	NotificationRetentionDays int `env:"NOTIFICATION_RETENTION_DAYS" envDefault:"90"`
+
+	// AnnouncementImageMaxPlatform and AnnouncementImageMaxLandlord are how many pictures a popup of the platform's admins
+	// and of a landlord may have; 1 to 20.
+	AnnouncementImageMaxPlatform int `env:"ANNOUNCEMENT_IMAGE_MAX_PLATFORM" envDefault:"10"`
+	AnnouncementImageMaxLandlord int `env:"ANNOUNCEMENT_IMAGE_MAX_LANDLORD" envDefault:"3"`
+
+	// Realtime (server-sent events): how long a stream ticket works, how often an idle stream gets a ping, how long one
+	// stream lasts before the client must reconnect, and how many streams one user may hold open on one instance.
+	RealtimeTicketTTL         time.Duration `env:"REALTIME_TICKET_TTL" envDefault:"60s"`
+	RealtimeHeartbeat         time.Duration `env:"REALTIME_HEARTBEAT" envDefault:"25s"`
+	RealtimeStreamMaxAge      time.Duration `env:"REALTIME_STREAM_MAX_AGE" envDefault:"15m"`
+	RealtimeMaxStreamsPerUser int           `env:"REALTIME_MAX_STREAMS_PER_USER" envDefault:"5"`
+
+	// The worker (`rental-management worker`): how often it looks at its jobs, how often it dispatches due announcements,
+	// and (when above zero) an interval that replaces the daily time of day of the daily jobs, for tests and demos.
+	WorkerTick             time.Duration `env:"WORKER_TICK" envDefault:"30s"`
+	WorkerDispatchInterval time.Duration `env:"WORKER_DISPATCH_INTERVAL" envDefault:"1m"`
+	WorkerDailyInterval    time.Duration `env:"WORKER_DAILY_INTERVAL" envDefault:"0s"`
+
 	// SeedDemoPassword is the password of the demo accounts `seed -demo` creates (development only).
 	SeedDemoPassword string `env:"SEED_DEMO_PASSWORD"`
 }
@@ -230,21 +251,27 @@ func (c Config) validate() error {
 
 func (c Config) validateDurations() error {
 	for name, d := range map[string]time.Duration{
-		"HTTP_REQUEST_TIMEOUT":   c.RequestTimeout,
-		"SHUTDOWN_TIMEOUT":       c.ShutdownTimeout,
-		"ACCESS_TOKEN_TTL":       c.AccessTokenTTL,
-		"REFRESH_TOKEN_TTL":      c.RefreshTokenTTL,
-		"PERMISSION_CACHE_TTL":   c.PermissionCacheTTL,
-		"EMAIL_VERIFICATION_TTL": c.EmailVerificationTTL,
-		"EMAIL_RESEND_COOLDOWN":  c.EmailResendCooldown,
+		"HTTP_REQUEST_TIMEOUT":     c.RequestTimeout,
+		"SHUTDOWN_TIMEOUT":         c.ShutdownTimeout,
+		"ACCESS_TOKEN_TTL":         c.AccessTokenTTL,
+		"REFRESH_TOKEN_TTL":        c.RefreshTokenTTL,
+		"PERMISSION_CACHE_TTL":     c.PermissionCacheTTL,
+		"EMAIL_VERIFICATION_TTL":   c.EmailVerificationTTL,
+		"EMAIL_RESEND_COOLDOWN":    c.EmailResendCooldown,
+		"REALTIME_TICKET_TTL":      c.RealtimeTicketTTL,
+		"REALTIME_HEARTBEAT":       c.RealtimeHeartbeat,
+		"REALTIME_STREAM_MAX_AGE":  c.RealtimeStreamMaxAge,
+		"WORKER_TICK":              c.WorkerTick,
+		"WORKER_DISPATCH_INTERVAL": c.WorkerDispatchInterval,
 	} {
 		if d <= 0 {
 			return fmt.Errorf("%s must be positive, got %s", name, d)
 		}
 	}
 	for name, d := range map[string]time.Duration{
-		"JWT_LEEWAY":          c.JWTLeeway,
-		"REFRESH_REUSE_GRACE": c.RefreshReuseGrace,
+		"JWT_LEEWAY":            c.JWTLeeway,
+		"REFRESH_REUSE_GRACE":   c.RefreshReuseGrace,
+		"WORKER_DAILY_INTERVAL": c.WorkerDailyInterval,
 	} {
 		if d < 0 {
 			return fmt.Errorf("%s must not be negative, got %s", name, d)
@@ -312,6 +339,19 @@ func (c Config) validateBackends() error {
 	}
 	if c.InvitationTTLDays < 1 || c.InvitationTTLDays > maxInvitationTTLDays {
 		return fmt.Errorf("INVITATION_TTL_DAYS must be between 1 and %d, got %d", maxInvitationTTLDays, c.InvitationTTLDays)
+	}
+	if c.NotificationRetentionDays < 1 || c.NotificationRetentionDays > 3650 {
+		return fmt.Errorf("NOTIFICATION_RETENTION_DAYS must be between 1 and 3650, got %d", c.NotificationRetentionDays)
+	}
+	for name, n := range map[string]int{
+		"ANNOUNCEMENT_IMAGE_MAX_PLATFORM": c.AnnouncementImageMaxPlatform, "ANNOUNCEMENT_IMAGE_MAX_LANDLORD": c.AnnouncementImageMaxLandlord,
+	} {
+		if n < 1 || n > 20 {
+			return fmt.Errorf("%s must be between 1 and 20, got %d", name, n)
+		}
+	}
+	if c.RealtimeMaxStreamsPerUser < 1 || c.RealtimeMaxStreamsPerUser > 100 {
+		return fmt.Errorf("REALTIME_MAX_STREAMS_PER_USER must be between 1 and 100, got %d", c.RealtimeMaxStreamsPerUser)
 	}
 	if c.SeedDemoPassword != "" && len(c.SeedDemoPassword) < minSeedPasswordBytes {
 		return fmt.Errorf("SEED_DEMO_PASSWORD must be at least %d characters", minSeedPasswordBytes)

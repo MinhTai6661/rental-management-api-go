@@ -36,7 +36,7 @@ S3_REGION         ?= us-east-1
 S3_PATH_STYLE     ?= true
 
 .PHONY: help build test test-integration vet fmt fmt-check lint tidy sqlc dev check hooks up down logs migrate \
-	migrate-down migrate-status seed seed-demo expire-subscriptions send-invoices send-reminders migrate-media fetch-locations
+	migrate-down migrate-status seed seed-demo expire-subscriptions send-invoices send-reminders prune-notifications dispatch-announcements worker migrate-media fetch-locations
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "%-8s %s\n", $$1, $$2}'
@@ -99,14 +99,23 @@ seed: ## Load roles, permissions, service plans, provinces and wards into the de
 seed-demo: ## Also create the demo accounts (password: SEED_DEMO_PASSWORD, default for the dev stack: see compose.yaml)
 	$(RENTAL_MANAGEMENT) seed -demo
 
-expire-subscriptions: ## Mark the subscriptions past their end as expired (idempotent; run it daily from cron)
+expire-subscriptions: ## Mark the subscriptions past their end as expired (idempotent; the worker runs it daily)
 	$(RENTAL_MANAGEMENT) subscriptions-expire
 
-send-invoices: ## Send the bills of plans with automatic invoicing (idempotent; run it daily from cron)
+send-invoices: ## Send the bills of plans with automatic invoicing (idempotent; the worker runs it daily)
 	$(RENTAL_MANAGEMENT) invoices-send-automatic
 
-send-reminders: ## Remind people of bills about to fall due or overdue (once per bill; run it daily from cron)
+send-reminders: ## Remind people of bills about to fall due or overdue (once per bill; the worker runs it daily)
 	$(RENTAL_MANAGEMENT) invoices-send-reminders
+
+prune-notifications: ## Delete the notifications past NOTIFICATION_RETENTION_DAYS (idempotent; the worker runs it daily)
+	$(RENTAL_MANAGEMENT) notifications-prune
+
+dispatch-announcements: ## Send the announcements whose start has come (idempotent; the worker runs it every minute)
+	$(RENTAL_MANAGEMENT) announcements-dispatch-due
+
+worker: ## Run the background jobs (daily commands and the announcement dispatch) in the foreground; Ctrl+C stops it
+	docker compose --profile worker up worker
 
 migrate-media: ## Copy the local pictures into the S3 bucket (idempotent, never deletes the local files)
 	docker run --rm --network $(COMPOSE_NETWORK) -e APP_ENV=local -e STORAGE_DRIVER=s3 \

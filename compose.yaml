@@ -59,6 +59,46 @@ services:
       - rental_management_network
     restart: unless-stopped
 
+  # The background jobs (see README "Background jobs"): `make worker` or `docker compose --profile worker up worker`.
+  # Several workers may run at once; a Redis lock makes each job run on one of them only.
+  worker:
+    image: golang:1.26.11
+    container_name: rental_management_worker
+    profiles: ["worker"]
+    working_dir: /src
+    # Build, then exec the binary: it must be PID 1 to get SIGTERM (`go run` does not pass it on), so a stop is graceful.
+    command: ["sh", "-c", "go build -o /tmp/rental-management ./cmd/rental-management && exec /tmp/rental-management worker"]
+    environment:
+      APP_ENV: local
+      LOG_FORMAT: text
+      DATABASE_URL: postgres://rental_management:rental_management@postgres:5432/rental_management_dev?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-only-secret-change-me-0123456789abcdef
+      DATA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      WEB_URL: http://localhost:2001
+      # Set these in the shell for short intervals when trying the worker out (WORKER_DAILY_INTERVAL replaces the daily times).
+      WORKER_TICK: ${WORKER_TICK:-30s}
+      WORKER_DISPATCH_INTERVAL: ${WORKER_DISPATCH_INTERVAL:-1m}
+      WORKER_DAILY_INTERVAL: ${WORKER_DAILY_INTERVAL:-0s}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/src
+      - rental-management-go-mod:/go/pkg/mod
+      - rental-management-go-build:/root/.cache/go-build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rental_management_network
+    stop_grace_period: 90s
+    restart: unless-stopped
+
   postgres:
     image: postgres:18-alpine
     container_name: rental_management_postgres

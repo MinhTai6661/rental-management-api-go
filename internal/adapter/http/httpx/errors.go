@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -109,9 +110,12 @@ func renderFields(l i18n.Localizer, fields []apperr.Field) map[string][]string {
 
 // attributeName is the human name of a field: a translation when one exists, else the field with spaces.
 func attributeName(l i18n.Localizer, field string) string {
-	// Nested fields ("charges.2.name") are named after their last segment.
-	if i := strings.LastIndex(field, "."); i >= 0 {
-		field = field[i+1:]
+	// Nested fields ("charges.2.name") are named after their last segment; a list position ("targeting.roles.0") is not
+	// a name, so such a field is named after the list.
+	segments := strings.Split(field, ".")
+	field = segments[len(segments)-1]
+	if _, err := strconv.Atoi(field); err == nil && len(segments) > 1 {
+		field = segments[len(segments)-2]
 	}
 	if key := "validation.attributes." + field; l.Has(key) {
 		return l.T(key, nil)

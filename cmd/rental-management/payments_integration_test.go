@@ -84,11 +84,11 @@ func newPayStack(t *testing.T) *payStack {
 	if err != nil {
 		t.Fatal(err)
 	}
-	billing, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer)
+	billing, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paying, err := newPayments(cfg, slog.New(slog.DiscardHandler), e.pool, e.files, sealer, billing)
+	paying, err := newPayments(cfg, slog.New(slog.DiscardHandler), e.pool, e.files, sealer, billing, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,11 +344,11 @@ func TestSeedDemoGivesTheDemoBillPaymentsAndIsSafeToRepeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	billing, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer)
+	billing, err := newInvoices(cfg, slog.New(slog.DiscardHandler), e.pool, e.plans, sealer, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paying, err := newPayments(cfg, slog.New(slog.DiscardHandler), e.pool, storage.NewMemory("http://files.test/v1/media"), sealer, billing)
+	paying, err := newPayments(cfg, slog.New(slog.DiscardHandler), e.pool, storage.NewMemory("http://files.test/v1/media"), sealer, billing, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
