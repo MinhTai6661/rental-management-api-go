@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -87,9 +88,14 @@ func Recover() gin.HandlerFunc {
 }
 
 // Timeout gives every request a deadline. Handlers must pass c.Request.Context() to whatever they call;
-// when the deadline passes and nothing was written yet, the client gets the 503 "server.busy" error.
-func Timeout(limit time.Duration) gin.HandlerFunc {
+// when the deadline passes and nothing was written yet, the client gets the 503 "server.busy" error. Routes whose
+// full path is in longLived (event streams) get no deadline of their own.
+func Timeout(limit time.Duration, longLived ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if slices.Contains(longLived, c.FullPath()) {
+			c.Next()
+			return
+		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), limit)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)

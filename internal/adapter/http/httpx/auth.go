@@ -36,6 +36,25 @@ func RequireAuth(auth Authenticator) gin.HandlerFunc {
 	}
 }
 
+// AuthenticateIfPresent stores the caller when the request carries a bearer token (an invalid one is refused as in
+// RequireAuth) and lets a request without one through, for routes that have a second way to sign in.
+func AuthenticateIfPresent(auth Authenticator) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := bearerToken(c.GetHeader("Authorization"))
+		if token == "" {
+			c.Next()
+			return
+		}
+		principal, err := auth.Authenticate(c.Request.Context(), token)
+		if err != nil {
+			Fail(c, err)
+			return
+		}
+		c.Set(principalKey, principal)
+		c.Next()
+	}
+}
+
 // RequirePermission lets the request through only when the principal's role has the permission
 // (including "<resource>.manage"). Put it after RequireAuth.
 func RequirePermission(name string) gin.HandlerFunc {
