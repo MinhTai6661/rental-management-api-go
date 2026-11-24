@@ -10,6 +10,64 @@ import (
 	"github.com/google/uuid"
 )
 
+type Announcement struct {
+	ID               uuid.UUID
+	CreatedByID      *uuid.UUID
+	SenderRole       string
+	LandlordID       *uuid.UUID
+	Audience         string
+	Targeting        []byte
+	Type             string
+	Title            []byte
+	Body             []byte
+	SendNotification bool
+	ShowPopup        bool
+	PublishedAt      *time.Time
+	StartsAt         *time.Time
+	EndsAt           *time.Time
+	Frequency        string
+	FrequencyDays    *int16
+	MaxPerPeriod     *int16
+	MaxTotal         *int16
+	Priority         int16
+	PopupSize        string
+	CtaLabel         []byte
+	CtaUrl           *string
+	Revision         int32
+	RecipientCount   int32
+	SentAt           *time.Time
+	RecalledAt       *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type AnnouncementImage struct {
+	ID             uuid.UUID
+	AnnouncementID uuid.UUID
+	FileKey        string
+	ContentType    string
+	Width          int32
+	Height         int32
+	SizeBytes      int32
+	LinkUrl        *string
+	DisplayOrder   int16
+	CreatedAt      time.Time
+}
+
+type AnnouncementImpression struct {
+	AnnouncementID  uuid.UUID
+	UserID          uuid.UUID
+	Revision        int32
+	ViewCount       int32
+	PeriodViewCount int32
+	PeriodStartedAt *time.Time
+	SessionID       *uuid.UUID
+	FirstSeenAt     time.Time
+	LastSeenAt      time.Time
+	DismissedAt     *time.Time
+	ClickedAt       *time.Time
+}
+
 type ContractInvitation struct {
 	ID              uuid.UUID
 	RoomID          uuid.UUID
@@ -78,6 +136,18 @@ type Medium struct {
 	DisplayOrder int16
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type Notification struct {
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	Kind           string
+	Params         []byte
+	Url            *string
+	AudienceRole   *string
+	ReadAt         *time.Time
+	CreatedAt      time.Time
+	AnnouncementID *uuid.UUID
 }
 
 type Payment struct {
