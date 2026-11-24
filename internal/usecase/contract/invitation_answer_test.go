@@ -78,13 +78,13 @@ func TestEveryUnusableInvitationReadsTheSame(t *testing.T) {
 		ref := prepare(w, id, token)
 		// A deleted room has its offers withdrawn by the deletion itself (see RoomLinks.Deleted), so only the answers that lock
 		// the room meet it here.
-		if _, err := w.answers.Preview(ctx, w.tenant, ref); err != domain.ErrInvitationInvalid && name != "a deleted room" {
+		if _, err := w.answers.Preview(ctx, w.tenant, ref); !errors.Is(err, domain.ErrInvitationInvalid) && name != "a deleted room" {
 			t.Errorf("%s: preview error = %v", name, err)
 		}
-		if _, err := w.accept(w.tenant, ref); err != domain.ErrInvitationInvalid {
+		if _, err := w.accept(w.tenant, ref); !errors.Is(err, domain.ErrInvitationInvalid) {
 			t.Errorf("%s: accept error = %v", name, err)
 		}
-		if err := w.answers.Decline(ctx, w.tenant, ref); err != domain.ErrInvitationInvalid {
+		if err := w.answers.Decline(ctx, w.tenant, ref); !errors.Is(err, domain.ErrInvitationInvalid) {
 			t.Errorf("%s: decline error = %v", name, err)
 		}
 		if len(w.store.contracts) != 0 || len(w.notifier.sent) != 0 {
@@ -117,7 +117,7 @@ func TestAudienceDecidesWhoMayAnswer(t *testing.T) {
 		got := w.mustCreate(in)
 		r := ref(got)
 		_, err := w.answers.Preview(context.Background(), who, r)
-		if (err == nil) != tc.allowed || (err != nil && err != domain.ErrInvitationInvalid) {
+		if (err == nil) != tc.allowed || (err != nil && !errors.Is(err, domain.ErrInvitationInvalid)) {
 			t.Errorf("%s: preview error = %v, allowed %v", name, err, tc.allowed)
 		}
 	}
@@ -215,7 +215,7 @@ func TestAcceptMakesTheRunningContractForTheCaller(t *testing.T) {
 		t.Errorf("audit = %v", got)
 	}
 	// The link cannot be used twice.
-	if _, err := w.accept(w.tenant, byToken(token)); err != domain.ErrInvitationInvalid {
+	if _, err := w.accept(w.tenant, byToken(token)); !errors.Is(err, domain.ErrInvitationInvalid) {
 		t.Errorf("second accept: %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestDeclineTellsTheLandlordAndClosesTheOffer(t *testing.T) {
 	if !slices.Equal(w.audit.actions(), []string{AuditInvitationDeclined}) {
 		t.Errorf("audit = %v", w.audit.actions())
 	}
-	if _, err := w.accept(w.tenant, byToken(token)); err != domain.ErrInvitationInvalid {
+	if _, err := w.accept(w.tenant, byToken(token)); !errors.Is(err, domain.ErrInvitationInvalid) {
 		t.Errorf("accept after decline: %v", err)
 	}
 }
