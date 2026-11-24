@@ -32,7 +32,8 @@ Quyền mới vào `internal/domain/identity/catalog.go` rồi `make seed`. Thê
 - Id là UUID v7; tiền là `bigint` VND (hậu tố `_vnd`); cột `snake_case`, thời gian `timestamptz`.
 - Mỗi tập giá trị cố định (trạng thái…) là một kiểu chuỗi có hàm `Parse` trong domain; ràng buộc CHECK trong DB giữ làm lớp bảo vệ cuối.
 - Link bí mật (lời mời, hóa đơn) chỉ lưu hash; bản có thể sao chép lại được mã hóa bằng `pkg/secretbox` (cần `DATA_ENCRYPTION_KEY`).
-- Các lệnh định kỳ (`subscriptions-expire`, `invoices-send-automatic`, `invoices-send-reminders`, `notifications-prune`, `announcements-dispatch-due`) do `rental-management worker` chạy (`make worker`, khóa Redis để nhiều bản không chạy trùng); vẫn gọi tay hoặc bằng cron được.
+- Context `admin` (người dùng, vai trò, đơn chủ trọ, cài đặt, điều khoản, quyền chủ thể dữ liệu) làm việc trên bảng của identity bằng query riêng và không import context khác; phiên bản điều khoản hiện hành = bản đăng mới nhất của `legal_documents` (identity lấy qua `TermsVersions`). Audit (`audit`): hai bảng `audit_logs`/`audit_activity` chia phân vùng theo tháng, mọi context ghi qua port audit riêng được nối vào một `Recorder` (`bridges_audit.go`); actor/role/ip lấy từ `pkg/reqctx` (middleware httpx); thêm action mới = thêm hằng vào `internal/domain/audit/action.go`.
+- Các lệnh định kỳ (`subscriptions-expire`, `invoices-send-automatic`, `invoices-send-reminders`, `notifications-prune`, `announcements-dispatch-due`, `audit-maintain`) do `rental-management worker` chạy (`make worker`, khóa Redis để nhiều bản không chạy trùng); vẫn gọi tay hoặc bằng cron được.
 
 ## Lệnh
 Máy host chỉ có Go 1.17 nên **mọi công cụ Go chạy trong Docker qua Makefile — đừng chạy `go` trực tiếp**:

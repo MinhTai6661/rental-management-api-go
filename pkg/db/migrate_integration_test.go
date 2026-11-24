@@ -35,8 +35,9 @@ func TestMigrateUpDownUpRoundTrip(t *testing.T) {
 	count := func() int {
 		t.Helper()
 		var n int
-		err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables
-			WHERE table_schema = 'public' AND table_name <> 'goose_db_version'`).Scan(&n)
+		// Partitions are not counted: the audit tables each stand for one, however many months they hold.
+		err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+			WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition AND c.relname <> 'goose_db_version'`).Scan(&n)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +49,7 @@ func TestMigrateUpDownUpRoundTrip(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 	applied := count()
-	if applied != 30 || !strings.Contains(out.String(), "00012_announcements.sql") {
+	if applied != 36 || !strings.Contains(out.String(), "00014_audit.sql") {
 		t.Fatalf("up created %d tables, output:\n%s", applied, out.String())
 	}
 
@@ -59,7 +60,7 @@ func TestMigrateUpDownUpRoundTrip(t *testing.T) {
 	}
 
 	// Roll back every migration: the database must be empty again.
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 14; i++ {
 		if err := db.Migrate(ctx, pool, "down", &out); err != nil {
 			t.Fatalf("down %d: %v", i+1, err)
 		}
@@ -84,8 +85,8 @@ func TestMigrateStatusAndUnknownCommand(t *testing.T) {
 	if err := db.Migrate(ctx, pool, "status", &out); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out.String(), "pending") != 12 {
-		t.Errorf("all twelve migrations should be pending:\n%s", out.String())
+	if strings.Count(out.String(), "pending") != 14 {
+		t.Errorf("all fourteen migrations should be pending:\n%s", out.String())
 	}
 
 	if err := db.Migrate(ctx, pool, "sideways", &out); err == nil {

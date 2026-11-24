@@ -119,6 +119,13 @@ type Config struct {
 	// NotificationRetentionDays is how long a notification is kept before `notifications-prune` deletes it; 1 to 3650.
 	NotificationRetentionDays int `env:"NOTIFICATION_RETENTION_DAYS" envDefault:"90"`
 
+	// AuditImportantRetentionMonths and AuditRoutineRetentionDays are how long the two tiers of the audit trail are kept
+	// (`audit-maintain` drops the monthly partitions past that); AuditPartitionsAhead is how many months after the
+	// current one get their partition made in advance.
+	AuditImportantRetentionMonths int `env:"AUDIT_IMPORTANT_RETENTION_MONTHS" envDefault:"24"`
+	AuditRoutineRetentionDays     int `env:"AUDIT_ROUTINE_RETENTION_DAYS" envDefault:"90"`
+	AuditPartitionsAhead          int `env:"AUDIT_PARTITIONS_AHEAD" envDefault:"3"`
+
 	// AnnouncementImageMaxPlatform and AnnouncementImageMaxLandlord are how many pictures a popup of the platform's admins
 	// and of a landlord may have; 1 to 20.
 	AnnouncementImageMaxPlatform int `env:"ANNOUNCEMENT_IMAGE_MAX_PLATFORM" envDefault:"10"`
@@ -339,6 +346,15 @@ func (c Config) validateBackends() error {
 	}
 	if c.InvitationTTLDays < 1 || c.InvitationTTLDays > maxInvitationTTLDays {
 		return fmt.Errorf("INVITATION_TTL_DAYS must be between 1 and %d, got %d", maxInvitationTTLDays, c.InvitationTTLDays)
+	}
+	if c.AuditImportantRetentionMonths < 1 || c.AuditImportantRetentionMonths > 240 {
+		return fmt.Errorf("AUDIT_IMPORTANT_RETENTION_MONTHS must be between 1 and 240, got %d", c.AuditImportantRetentionMonths)
+	}
+	if c.AuditRoutineRetentionDays < 1 || c.AuditRoutineRetentionDays > 3650 {
+		return fmt.Errorf("AUDIT_ROUTINE_RETENTION_DAYS must be between 1 and 3650, got %d", c.AuditRoutineRetentionDays)
+	}
+	if c.AuditPartitionsAhead < 1 || c.AuditPartitionsAhead > 24 {
+		return fmt.Errorf("AUDIT_PARTITIONS_AHEAD must be between 1 and 24, got %d", c.AuditPartitionsAhead)
 	}
 	if c.NotificationRetentionDays < 1 || c.NotificationRetentionDays > 3650 {
 		return fmt.Errorf("NOTIFICATION_RETENTION_DAYS must be between 1 and 3650, got %d", c.NotificationRetentionDays)

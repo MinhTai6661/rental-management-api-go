@@ -44,3 +44,22 @@ func Queries(ctx context.Context, pool *pgxpool.Pool) *sqlcgen.Queries {
 	}
 	return sqlcgen.New(pool)
 }
+
+// Isolated runs fn so that its failure leaves the transaction of ctx usable: inside a transaction it works in a
+// savepoint that is rolled back when fn fails (a statement error would otherwise abort the whole transaction); with no
+// transaction it just runs fn. The audit trail uses it for the entries that must never break the request.
+func Isolated(ctx context.Context, fn func(ctx context.Context) error) error {
+	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
+	if !ok {
+		return fn(ctx)
+	}
+	savepoint, err := tx.Begin(ctx)
+	if err != nil {
+		return Translate(err)
+	}
+	if err := fn(context.WithValue(ctx, txKey{}, savepoint)); err != nil {
+		_ = savepoint.Rollback(ctx)
+		return err
+	}
+	return Translate(savepoint.Commit(ctx))
+}

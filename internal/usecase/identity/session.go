@@ -23,7 +23,13 @@ func (a *Auth) openSession(ctx context.Context, userID uuid.UUID, role string, c
 			return err
 		}
 		refresh, err = a.createSession(ctx, userID, sessionID, role, client, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return a.audit.Record(ctx, AuditEvent{
+			Action: AuditLogin, ActorID: userID, ActorRole: role, SessionID: sessionID, TargetUserID: &userID,
+			Meta: map[string]any{"via": loginVia},
+		})
 	})
 	if err != nil {
 		return LoginResult{}, err

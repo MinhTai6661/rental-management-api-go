@@ -151,6 +151,10 @@ linters:
               desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/notification
               desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/audit
+              desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/testenv
               desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/invitation
@@ -183,6 +187,10 @@ linters:
             - pkg: rental-management/internal/adapter/http/payment
               desc: the HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/notification
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: the HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/audit
               desc: the HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/testenv
               desc: the HTTP helpers must not import the feature packages
@@ -217,6 +225,10 @@ linters:
             - pkg: rental-management/internal/adapter/persistence/postgres/invitation
               desc: the shared database helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/persistence/postgres/notification
+              desc: the shared database helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence/postgres/admin
+              desc: the shared database helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence/postgres/audit
               desc: the shared database helpers must not import the feature packages
         # Contexts never import each other: property and contract talk through ports that cmd/rental-management
         # adapts (bridges.go), so either can be moved or replaced alone.
@@ -816,6 +828,10 @@ linters:
               desc: the notification context must not import another context (use a port, adapt it in cmd)
         other-contexts-do-not-know-notification:
           files:
+            - "**/internal/domain/admin/**"
+            - "**/internal/usecase/admin/**"
+            - "**/internal/adapter/http/admin/**"
+            - "**/internal/adapter/persistence/postgres/admin/**"
             - "**/internal/domain/identity/**"
             - "**/internal/usecase/identity/**"
             - "**/internal/adapter/http/identity/**"
@@ -861,6 +877,301 @@ linters:
               desc: send messages through your own Notifier port (adapt it in cmd)
             - pkg: rental-management/internal/adapter/persistence/postgres/notification
               desc: send messages through your own Notifier port (adapt it in cmd)
+        # The admin context knows no other context: the first building of a new landlord, the messages and the
+        # audit trail are ports that cmd/rental-management adapts (admin.go). Test files are left out.
+        admin-does-not-know-other-contexts:
+          files:
+            - "**/internal/domain/admin/**"
+            - "**/internal/usecase/admin/**"
+            - "**/internal/adapter/http/admin/**"
+            - "**/internal/adapter/persistence/postgres/admin/**"
+            - "!$test"
+          deny:
+            - pkg: rental-management/internal/domain/identity
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/identity
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/identity
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/identity
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/location
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/location
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/location
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/property
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/property
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/property
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/contract
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/contract
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/contract
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/contract
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/plan
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/plan
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/plan
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/plan
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/listing
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/listing
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/listing
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/listing
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invoice
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invoice
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invoice
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invoice
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/payment
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/payment
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/payment
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/payment
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invitation
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invitation
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invitation
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invitation
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/notification
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/notification
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/notification
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/notification
+              desc: the admin context must not import another context (use a port, adapt it in cmd)
+        other-contexts-do-not-know-admin:
+          files:
+            - "**/internal/domain/identity/**"
+            - "**/internal/usecase/identity/**"
+            - "**/internal/adapter/http/identity/**"
+            - "**/internal/adapter/persistence/postgres/identity/**"
+            - "**/internal/domain/location/**"
+            - "**/internal/usecase/location/**"
+            - "**/internal/adapter/http/location/**"
+            - "**/internal/adapter/persistence/postgres/location/**"
+            - "**/internal/domain/property/**"
+            - "**/internal/usecase/property/**"
+            - "**/internal/adapter/http/property/**"
+            - "**/internal/adapter/persistence/postgres/property/**"
+            - "**/internal/domain/contract/**"
+            - "**/internal/usecase/contract/**"
+            - "**/internal/adapter/http/contract/**"
+            - "**/internal/adapter/persistence/postgres/contract/**"
+            - "**/internal/domain/plan/**"
+            - "**/internal/usecase/plan/**"
+            - "**/internal/adapter/http/plan/**"
+            - "**/internal/adapter/persistence/postgres/plan/**"
+            - "**/internal/domain/listing/**"
+            - "**/internal/usecase/listing/**"
+            - "**/internal/adapter/http/listing/**"
+            - "**/internal/adapter/persistence/postgres/listing/**"
+            - "**/internal/domain/invoice/**"
+            - "**/internal/usecase/invoice/**"
+            - "**/internal/adapter/http/invoice/**"
+            - "**/internal/adapter/persistence/postgres/invoice/**"
+            - "**/internal/domain/payment/**"
+            - "**/internal/usecase/payment/**"
+            - "**/internal/adapter/http/payment/**"
+            - "**/internal/adapter/persistence/postgres/payment/**"
+            - "**/internal/domain/invitation/**"
+            - "**/internal/usecase/invitation/**"
+            - "**/internal/adapter/http/invitation/**"
+            - "**/internal/adapter/persistence/postgres/invitation/**"
+            - "**/internal/domain/notification/**"
+            - "**/internal/usecase/notification/**"
+            - "**/internal/adapter/http/notification/**"
+            - "**/internal/adapter/persistence/postgres/notification/**"
+          deny:
+            - pkg: rental-management/internal/domain/admin
+              desc: reach the admin work through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/usecase/admin
+              desc: reach the admin work through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: reach the admin work through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/admin
+              desc: reach the admin work through your own port (adapt it in cmd)
+        # The audit trail knows no other context (it reads their tables only through its own queries) and no other
+        # context knows it: they write to it through their own audit port, which cmd/rental-management adapts
+        # (bridges_audit.go). Test files are left out.
+        audit-does-not-know-other-contexts:
+          files:
+            - "**/internal/domain/audit/**"
+            - "**/internal/usecase/audit/**"
+            - "**/internal/adapter/http/audit/**"
+            - "**/internal/adapter/persistence/postgres/audit/**"
+            - "!$test"
+          deny:
+            - pkg: rental-management/internal/domain/identity
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/identity
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/identity
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/identity
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/location
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/location
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/location
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/property
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/property
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/property
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/contract
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/contract
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/contract
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/contract
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/plan
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/plan
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/plan
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/plan
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/listing
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/listing
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/listing
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/listing
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invoice
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invoice
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invoice
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invoice
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/payment
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/payment
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/payment
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/payment
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/notification
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/notification
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/notification
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/notification
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/admin
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/admin
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/admin
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invitation
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invitation
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invitation
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invitation
+              desc: the audit context must not import another context (use a port, adapt it in cmd)
+        other-contexts-do-not-know-audit:
+          files:
+            - "**/internal/domain/identity/**"
+            - "**/internal/usecase/identity/**"
+            - "**/internal/adapter/http/identity/**"
+            - "**/internal/adapter/persistence/postgres/identity/**"
+            - "**/internal/domain/location/**"
+            - "**/internal/usecase/location/**"
+            - "**/internal/adapter/http/location/**"
+            - "**/internal/adapter/persistence/postgres/location/**"
+            - "**/internal/domain/property/**"
+            - "**/internal/usecase/property/**"
+            - "**/internal/adapter/http/property/**"
+            - "**/internal/adapter/persistence/postgres/property/**"
+            - "**/internal/domain/contract/**"
+            - "**/internal/usecase/contract/**"
+            - "**/internal/adapter/http/contract/**"
+            - "**/internal/adapter/persistence/postgres/contract/**"
+            - "**/internal/domain/plan/**"
+            - "**/internal/usecase/plan/**"
+            - "**/internal/adapter/http/plan/**"
+            - "**/internal/adapter/persistence/postgres/plan/**"
+            - "**/internal/domain/listing/**"
+            - "**/internal/usecase/listing/**"
+            - "**/internal/adapter/http/listing/**"
+            - "**/internal/adapter/persistence/postgres/listing/**"
+            - "**/internal/domain/invoice/**"
+            - "**/internal/usecase/invoice/**"
+            - "**/internal/adapter/http/invoice/**"
+            - "**/internal/adapter/persistence/postgres/invoice/**"
+            - "**/internal/domain/payment/**"
+            - "**/internal/usecase/payment/**"
+            - "**/internal/adapter/http/payment/**"
+            - "**/internal/adapter/persistence/postgres/payment/**"
+            - "**/internal/domain/notification/**"
+            - "**/internal/usecase/notification/**"
+            - "**/internal/adapter/http/notification/**"
+            - "**/internal/adapter/persistence/postgres/notification/**"
+            - "**/internal/domain/admin/**"
+            - "**/internal/usecase/admin/**"
+            - "**/internal/adapter/http/admin/**"
+            - "**/internal/adapter/persistence/postgres/admin/**"
+            - "**/internal/domain/invitation/**"
+            - "**/internal/usecase/invitation/**"
+            - "**/internal/adapter/http/invitation/**"
+            - "**/internal/adapter/persistence/postgres/invitation/**"
+          deny:
+            - pkg: rental-management/internal/domain/audit
+              desc: write to the audit trail through your own audit port (adapt it in cmd)
+            - pkg: rental-management/internal/usecase/audit
+              desc: write to the audit trail through your own audit port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/audit
+              desc: write to the audit trail through your own audit port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/audit
+              desc: write to the audit trail through your own audit port (adapt it in cmd)
   exclusions:
     presets:
       - std-error-handling

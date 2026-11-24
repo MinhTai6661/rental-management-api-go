@@ -15,6 +15,8 @@ sql:
       - db/queries/invitation
       - db/queries/payment
       - db/queries/notification
+      - db/queries/admin
+      - db/queries/audit
     gen:
       go:
         package: sqlc

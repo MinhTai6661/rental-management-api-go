@@ -27,6 +27,10 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput) (UserView, error)
 	if err != nil {
 		return UserView{}, fmt.Errorf("make user id: %w", err)
 	}
+	terms, err := a.termsVersion(ctx)
+	if err != nil {
+		return UserView{}, err
+	}
 	now := a.clock.Now()
 	role := authz.RoleTenant
 
@@ -34,14 +38,17 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput) (UserView, error)
 		if err := a.users.Create(ctx, domain.NewUser{
 			ID: id, Email: email, PasswordHash: hash, FullName: in.FullName, PhoneNumber: in.PhoneNumber,
 			WardCode: in.WardCode, AddressDetail: in.AddressDetail, LastActiveRole: role,
-			TermsVersion: a.opts.TermsVersion, TermsAcceptedAt: now, CreatedAt: now,
+			TermsVersion: terms, TermsAcceptedAt: now, CreatedAt: now,
 		}); err != nil {
 			return err
 		}
 		if err := assignRoles(ctx, a.users, id, []string{role}, now); err != nil {
 			return err
 		}
-		return a.insertVerificationToken(ctx, id, verifyHash, now)
+		if err := a.insertVerificationToken(ctx, id, verifyHash, now); err != nil {
+			return err
+		}
+		return a.audit.Record(ctx, AuditEvent{Action: AuditRegister, ActorID: id, ActorRole: role, TargetUserID: &id})
 	})
 	switch {
 	case shared.IsUnique(err):

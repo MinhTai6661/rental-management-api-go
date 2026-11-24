@@ -238,5 +238,21 @@
   "validation.attributes.cta_label": "nhãn nút",
   "validation.attributes.cta_url": "đường dẫn của nút",
   "validation.attributes.vi": "nội dung tiếng Việt",
-  "validation.attributes.en": "nội dung tiếng Anh"
+  "validation.attributes.en": "nội dung tiếng Anh",
+  "validation.staff_roles_mixed": "Tài khoản quản trị không được giữ vai trò khác.",
+  "validation.has_active_contracts": "Chủ trọ này còn {{.count}} hợp đồng đang chạy nên chưa thể gỡ vai trò chủ trọ.",
+  "validation.already_landlord": "Bạn đã là chủ trọ.",
+  "validation.not_renter": "Chỉ tài khoản người thuê mới có thể đăng ký làm chủ trọ.",
+  "validation.already_pending": "Bạn đã có một đơn đang chờ duyệt.",
+  "validation.not_reviewable": "Đơn này đã được trả lời rồi.",
+  "validation.staff_cannot_erase": "Tài khoản quản trị không tự xóa được.",
+  "validation.erasure_blocked": "Chưa thể xóa tài khoản khi còn hợp đồng đang chạy hoặc chờ duyệt: {{.blockers}}.",
+  "validation.richtext_structure": "Trường {{.attribute}} không phải là tài liệu hợp lệ.",
+  "validation.richtext_node_type": "Trường {{.attribute}} dùng loại nội dung không được phép.",
+  "validation.richtext_mark_type": "Trường {{.attribute}} dùng kiểu chữ không được phép.",
+  "validation.richtext_heading_level": "Trường {{.attribute}} chỉ được dùng tiêu đề cấp 2 và 3.",
+  "validation.richtext_link": "Trường {{.attribute}} có liên kết không được phép (chỉ http, https hoặc mailto).",
+  "validation.richtext_too_large": "Trường {{.attribute}} quá dài hoặc lồng quá sâu.",
+  "validation.richtext_no_heading": "Trường {{.attribute}} cần ít nhất một tiêu đề mục (cấp 2).",
+  "validation.richtext_empty": "Trường {{.attribute}} chưa có chữ nào."
 }

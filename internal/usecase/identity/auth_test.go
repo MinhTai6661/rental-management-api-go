@@ -239,6 +239,7 @@ type authFixture struct {
 	hasher *fakeHasher
 	mailer *fakeMailer
 	clock  *testClock
+	audit  *fakeAudit
 }
 
 const reuseGrace = 10 * time.Second
@@ -248,12 +249,12 @@ func newAuthFixture(t *testing.T) *authFixture {
 	f := &authFixture{
 		tx: &fakeTx{}, users: &fakeUsers{byEmail: map[string]domain.User{}}, verify: &fakeVerifications{},
 		sess: &fakeSessions{}, revoke: &fakeRevocations{}, hasher: &fakeHasher{}, mailer: &fakeMailer{},
-		clock: &testClock{time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
+		clock: &testClock{time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)}, audit: &fakeAudit{},
 	}
 	auth, err := NewAuth(Deps{
 		Tx: f.tx, Users: f.users, Sessions: f.sess, Verifications: f.verify, Permissions: fakePermissions{},
 		Revocations: f.revoke, Hasher: f.hasher, Tokens: fakeTokens{}, Opaque: &fakeOpaque{}, Mailer: f.mailer,
-		Clock: f.clock, Log: slog.New(slog.DiscardHandler), Dispatch: func(work func()) { work() },
+		Clock: f.clock, Log: slog.New(slog.DiscardHandler), Audit: f.audit, Dispatch: func(work func()) { work() },
 	}, Options{
 		TermsVersion: "2026-11-03", VerificationTTL: 24 * time.Hour, RefreshTTL: time.Hour,
 		ReuseGrace: reuseGrace, PermissionCacheTTL: time.Minute, RevokedFor: 20 * time.Minute,

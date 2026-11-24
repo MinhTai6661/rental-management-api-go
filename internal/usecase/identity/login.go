@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
+
 	domain "rental-management/internal/domain/identity"
 	"rental-management/internal/domain/shared"
 	"rental-management/pkg/authz"
@@ -25,13 +27,21 @@ func (a *Auth) Login(ctx context.Context, email, password string, client Client)
 	if verr != nil {
 		a.log.Error("stored password hash is unusable", "user_id", user.ID, "error", verr)
 	}
+	email = domain.NormalizeEmail(email)
+	var target *uuid.UUID
+	if found {
+		target = &user.ID
+	}
 	if !found || user.PasswordHash == nil || !matches {
+		a.auditFailedLogin(ctx, email, failBadCredentials, target)
 		return LoginResult{}, domain.ErrInvalidCredentials
 	}
 	if user.Status != authz.StatusActive {
+		a.auditFailedLogin(ctx, email, failAccountInactive, target)
 		return LoginResult{}, domain.ErrAccountInactive
 	}
 	if user.EmailVerifiedAt == nil {
+		a.auditFailedLogin(ctx, email, failEmailUnverified, target)
 		return LoginResult{}, domain.ErrEmailUnverified
 	}
 
@@ -41,6 +51,7 @@ func (a *Auth) Login(ctx context.Context, email, password string, client Client)
 	}
 	role := domain.InitialRole(auth.Roles, deref(auth.LastActiveRole))
 	if role == "" {
+		a.auditFailedLogin(ctx, email, failNoRole, target)
 		return LoginResult{}, domain.ErrForbidden
 	}
 	return a.openSession(ctx, user.ID, role, client)

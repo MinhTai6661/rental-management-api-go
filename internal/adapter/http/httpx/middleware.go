@@ -15,6 +15,7 @@ import (
 
 	"rental-management/internal/adapter/http/apperr"
 	"rental-management/pkg/i18n"
+	"rental-management/pkg/reqctx"
 )
 
 const requestIDHeader = "X-Request-Id"
@@ -32,6 +33,10 @@ func RequestID(base *slog.Logger) gin.HandlerFunc {
 		}
 		c.Header(requestIDHeader, id)
 		c.Set(loggerKey, base.With("request_id", id))
+		// The layers below HTTP (the audit trail) learn the facts of the request from the context.
+		c.Request = c.Request.WithContext(reqctx.With(c.Request.Context(), reqctx.Info{
+			RequestID: id, IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"),
+		}))
 		c.Next()
 	}
 }

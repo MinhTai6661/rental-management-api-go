@@ -36,7 +36,10 @@ func (a *Auth) VerifyEmail(ctx context.Context, raw string) error {
 			return err
 		}
 		verified = true
-		return a.users.MarkEmailVerified(ctx, row.UserID, now)
+		if err := a.users.MarkEmailVerified(ctx, row.UserID, now); err != nil {
+			return err
+		}
+		return a.audit.Record(ctx, AuditEvent{Action: AuditEmailConfirmed, ActorID: row.UserID, TargetUserID: &row.UserID})
 	})
 	if err != nil {
 		return err

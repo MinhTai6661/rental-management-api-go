@@ -112,6 +112,39 @@ type VerificationMailer interface {
 	SendVerification(ctx context.Context, to, fullName, token, lang string, expiresIn time.Duration) error
 }
 
+// TermsVersions tells which version of the terms of use people must accept now. It is optional: without it the
+// version of Options.TermsVersion is used.
+type TermsVersions interface {
+	Current(ctx context.Context) (string, error)
+}
+
+// AuditEvent is something worth keeping in the audit trail. The audit context is reached through this port, so the
+// account use cases never see it.
+type AuditEvent struct {
+	// Action is the audit action ("auth.login"...).
+	Action string
+	// ActorID is who did it, ActorRole the role they acted in and SessionID the login session the entry belongs to
+	// (uuid.Nil for none).
+	ActorID      uuid.UUID
+	ActorRole    string
+	SessionID    uuid.UUID
+	TargetUserID *uuid.UUID
+	// Meta never holds an email address or a password.
+	Meta map[string]any
+}
+
+// Auditor writes the audit trail; it runs in the transaction of ctx. An entry of the routine tier (a sign-in) never
+// fails the call.
+type Auditor interface {
+	Record(ctx context.Context, e AuditEvent) error
+}
+
+// NoAudit is the default: nothing is recorded.
+type NoAudit struct{}
+
+// Record does nothing.
+func (NoAudit) Record(context.Context, AuditEvent) error { return nil }
+
 // Clock tells the time.
 type Clock interface {
 	Now() time.Time

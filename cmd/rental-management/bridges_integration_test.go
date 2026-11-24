@@ -19,7 +19,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rental-management/config"
+	adminhttp "rental-management/internal/adapter/http/admin"
 	"rental-management/internal/adapter/http/apperr"
+	audithttp "rental-management/internal/adapter/http/audit"
 	contracthttp "rental-management/internal/adapter/http/contract"
 	"rental-management/internal/adapter/http/httpx"
 	listinghttp "rental-management/internal/adapter/http/listing"
@@ -62,6 +64,9 @@ type bridgeEnv struct {
 	offers    listings
 	rentals   contracts
 	props     property
+	staff     admin
+	trail     auditing
+	auth      fakeAuth
 	landlord  uuid.UUID
 	landlord2 uuid.UUID
 	tenant    uuid.UUID
@@ -118,6 +123,8 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 	e.offers = newListings(log, e.pool, e.plans, e.inbox.deliveries)
 	e.rentals = newContracts(cfg, log, e.pool, e.plans, invitationPorts{}, e.inbox.deliveries)
 	e.props = newProperty(cfg, log, e.pool, files, e.rentals, e.offers, e.plans)
+	e.trail = newAudit(cfg, log, e.pool)
+	e.staff = newAdmin(cfg, log, e.pool, adminPorts{notify: e.inbox.deliveries, buildings: e.props.buildings})
 
 	catalog, err := i18n.New()
 	if err != nil {
@@ -132,6 +139,7 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 		"admin":              principalOf(e.admin, authz.RoleAdmin),
 		"super":              principalOf(e.super, authz.RoleSuperAdmin),
 	}
+	e.auth = auth
 	e.engine = gin.New()
 	e.engine.Use(httpx.RequestID(log), httpx.Locale(catalog), httpx.Recover())
 	binder := httpx.NewBinder()
@@ -151,6 +159,11 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 	notificationhttp.MountAnnouncements(v1, notificationhttp.NewAnnouncementHandler(e.inbox.announcements, files, binder), images,
 		notificationhttp.NewStatsHandler(e.inbox.stats), auth, allowAll{})
 	listinghttp.MountSearch(v1, listinghttp.NewOfferHandler(e.offers.offers, files), auth, allowAll{})
+	apps := adminhttp.NewApplicationHandler(e.staff.applications, binder)
+	legal := adminhttp.NewLegalHandler(e.staff.legal, binder)
+	adminhttp.MountAdmin(v1, adminhttp.NewUserHandler(e.staff.users, binder), apps, adminhttp.NewSettingsHandler(e.staff.settings, binder), legal, auth, allowAll{})
+	audithttp.Mount(v1, audithttp.NewHandler(e.trail.reader), auth)
+	adminhttp.MountSelf(v1, apps, adminhttp.NewProfileHandler(e.staff.profiles, binder), legal, adminhttp.NewPersonalDataHandler(e.staff.personal, binder), auth, allowAll{})
 	return e
 }
 

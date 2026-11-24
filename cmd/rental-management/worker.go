@@ -47,6 +47,7 @@ func runWorker(ctx context.Context, out io.Writer) error {
 	}
 	defer func() { _ = rdb.Close() }()
 
+	trail := newAudit(cfg, log, pool)
 	pusher := realtimePusher{broadcast: redisstore.NewBroadcaster(rdb, cfg.RedisKeyPrefix, log)}
 	inbox := newNotifications(cfg, log, pool, nil, pusher)
 	pricing := newPlans(log, pool, inbox.deliveries)
@@ -67,6 +68,9 @@ func runWorker(ctx context.Context, out io.Writer) error {
 		dailyJob(cfg.WorkerDailyInterval, "subscriptions-expire", "00:15", func(ctx context.Context) (string, error) {
 			expired, err := pricing.subscriptions.ExpireDue(ctx)
 			return fmt.Sprintf("expired %d subscriptions", expired), err
+		}),
+		dailyJob(cfg.WorkerDailyInterval, "audit-maintain", "03:00", func(ctx context.Context) (string, error) {
+			return maintainAudit(ctx, trail)
 		}),
 		dailyJob(cfg.WorkerDailyInterval, "notifications-prune", "03:30", func(ctx context.Context) (string, error) {
 			deleted, err := inbox.pruner.Prune(ctx)

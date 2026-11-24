@@ -238,5 +238,21 @@
   "validation.attributes.cta_label": "button label",
   "validation.attributes.cta_url": "button address",
   "validation.attributes.vi": "Vietnamese text",
-  "validation.attributes.en": "English text"
+  "validation.attributes.en": "English text",
+  "validation.staff_roles_mixed": "An admin account cannot hold any other role.",
+  "validation.has_active_contracts": "This landlord still has {{.count}} running contracts, so the landlord role cannot be taken away.",
+  "validation.already_landlord": "You are already a landlord.",
+  "validation.not_renter": "Only a tenant account can apply to become a landlord.",
+  "validation.already_pending": "You already have an application waiting for a review.",
+  "validation.not_reviewable": "This application has already been answered.",
+  "validation.staff_cannot_erase": "An admin account cannot erase itself.",
+  "validation.erasure_blocked": "The account cannot be erased while a contract is running or waiting: {{.blockers}}.",
+  "validation.richtext_structure": "The {{.attribute}} field is not a valid document.",
+  "validation.richtext_node_type": "The {{.attribute}} field uses a type of content that is not allowed.",
+  "validation.richtext_mark_type": "The {{.attribute}} field uses a text style that is not allowed.",
+  "validation.richtext_heading_level": "The {{.attribute}} field may only use headings of level 2 and 3.",
+  "validation.richtext_link": "The {{.attribute}} field has a link that is not allowed (use http, https or mailto).",
+  "validation.richtext_too_large": "The {{.attribute}} field is too large or nested too deeply.",
+  "validation.richtext_no_heading": "The {{.attribute}} field needs at least one section heading (level 2).",
+  "validation.richtext_empty": "The {{.attribute}} field has no text."
 }

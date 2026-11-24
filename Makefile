@@ -36,7 +36,7 @@ S3_REGION         ?= us-east-1
 S3_PATH_STYLE     ?= true
 
 .PHONY: help build test test-integration vet fmt fmt-check lint tidy sqlc dev check hooks up down logs migrate \
-	migrate-down migrate-status seed seed-demo expire-subscriptions send-invoices send-reminders prune-notifications dispatch-announcements worker migrate-media fetch-locations
+	migrate-down migrate-status seed seed-demo expire-subscriptions send-invoices send-reminders prune-notifications audit-maintain dispatch-announcements worker migrate-media fetch-locations
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "%-8s %s\n", $$1, $$2}'
@@ -107,6 +107,9 @@ send-invoices: ## Send the bills of plans with automatic invoicing (idempotent; 
 
 send-reminders: ## Remind people of bills about to fall due or overdue (once per bill; the worker runs it daily)
 	$(RENTAL_MANAGEMENT) invoices-send-reminders
+
+audit-maintain: ## Make the audit partitions of the coming months and drop the expired ones (idempotent; the worker runs it daily)
+	$(RENTAL_MANAGEMENT) audit-maintain
 
 prune-notifications: ## Delete the notifications past NOTIFICATION_RETENTION_DAYS (idempotent; the worker runs it daily)
 	$(RENTAL_MANAGEMENT) notifications-prune

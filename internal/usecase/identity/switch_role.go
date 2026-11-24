@@ -53,7 +53,13 @@ func (a *Auth) SwitchRole(ctx context.Context, p authz.Principal, role, refresh 
 			return err
 		}
 		newRefresh, err = a.createSession(ctx, userID, newSession, role, client, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return a.audit.Record(ctx, AuditEvent{
+			Action: AuditRoleSwitched, ActorID: userID, ActorRole: role, SessionID: newSession, TargetUserID: &userID,
+			Meta: map[string]any{"from": p.Role, "to": role},
+		})
 	})
 	if err != nil {
 		return LoginResult{}, err

@@ -48,6 +48,10 @@ type Deps struct {
 	Mailer        VerificationMailer
 	Clock         Clock
 	Log           *slog.Logger
+	// Audit records what happens to accounts and sessions (nil: nothing).
+	Audit Auditor
+	// Terms gives the version of the terms people must accept (nil: Options.TermsVersion).
+	Terms TermsVersions
 	// Dispatch runs background work (sending an email) so the response does not wait for it, and so the time a
 	// request takes does not tell whether an address has an account. Nil runs it in a goroutine; tests run it inline.
 	Dispatch func(work func())
@@ -66,6 +70,8 @@ type Auth struct {
 	mailer        VerificationMailer
 	clock         Clock
 	log           *slog.Logger
+	audit         Auditor
+	terms         TermsVersions
 	dispatch      func(work func())
 	perms         *permissionCache
 	opts          Options
@@ -83,8 +89,12 @@ func NewAuth(d Deps, o Options) (*Auth, error) {
 	a := &Auth{
 		tx: d.Tx, users: d.Users, sessions: d.Sessions, verifications: d.Verifications, hasher: d.Hasher,
 		tokens: d.Tokens, opaque: d.Opaque, revocations: d.Revocations, mailer: d.Mailer, clock: d.Clock, log: d.Log,
-		dispatch: d.Dispatch, opts: o, dummyHash: dummy,
+		dispatch: d.Dispatch, terms: d.Terms, opts: o, dummyHash: dummy,
 		perms: newPermissionCache(d.Permissions, o.PermissionCacheTTL, d.Clock),
+	}
+	a.audit = d.Audit
+	if a.audit == nil {
+		a.audit = NoAudit{}
 	}
 	if a.dispatch == nil {
 		a.dispatch = a.runInBackground
@@ -115,4 +125,12 @@ func (a *Auth) sendVerification(ctx context.Context, fullName, email, token, lan
 			a.log.Error("send verification email failed", "error", err)
 		}
 	})
+}
+
+// termsVersion is the version of the terms people must accept now.
+func (a *Auth) termsVersion(ctx context.Context) (string, error) {
+	if a.terms == nil {
+		return a.opts.TermsVersion, nil
+	}
+	return a.terms.Current(ctx)
 }

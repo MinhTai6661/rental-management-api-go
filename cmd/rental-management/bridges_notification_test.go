@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	notificationdomain "rental-management/internal/domain/notification"
+	adminuc "rental-management/internal/usecase/admin"
 	contractuc "rental-management/internal/usecase/contract"
 	invoiceuc "rental-management/internal/usecase/invoice"
 	listinguc "rental-management/internal/usecase/listing"
@@ -27,6 +28,7 @@ func TestEveryKindAContextSendsIsInTheCatalog(t *testing.T) {
 		listinguc.NotifySubmitted, listinguc.NotifyApproved, listinguc.NotifyRejected, listinguc.NotifyTakenDown,
 		invoiceuc.NotifyInvoiceSent, invoiceuc.NotifyInvoiceUpdated, invoiceuc.NotifyInvoiceDueSoon, invoiceuc.NotifyInvoiceOverdue,
 		invoiceuc.NotifyTenantInvoiceOverdue,
+		adminuc.NotifyApplicationReceived, adminuc.NotifyApplicationApproved, adminuc.NotifyApplicationRejected, adminuc.NotifyLandlordRevoked,
 		paymentuc.NotifyPaymentSubmitted, paymentuc.NotifyPaymentConfirmed, paymentuc.NotifyPaymentRejected,
 	}
 	for _, k := range kinds {

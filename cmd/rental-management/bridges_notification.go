@@ -110,6 +110,7 @@ func newNotifications(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, f
 		Tx: postgres.NewTxManager(pool), Notifications: notificationpg.NewNotificationRepository(pool),
 		Announcements: notificationpg.NewAnnouncementRepository(pool), Impressions: notificationpg.NewImpressionRepository(pool),
 		Images: notificationpg.NewImageRepository(pool), Stats: notificationpg.NewStatsRepository(pool), Log: log, Pusher: pusher,
+		Audit: notificationAudit{r: newAuditRecorder(log, pool)},
 	}
 	if files != nil {
 		deps.Files = announcementFiles{inner: filestore.New(files)}

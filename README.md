@@ -101,6 +101,7 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `WORKER_TICK` / `WORKER_DISPATCH_INTERVAL` / `WORKER_DAILY_INTERVAL` | `30s` / `1m` / `0s` | how often the worker looks at its jobs / how often it delivers due announcements / when above zero, an interval that replaces the daily times of the daily jobs (tests and demos only) |
 | `REALTIME_MAX_STREAMS_PER_USER` | `5` | open event streams one person may hold on one API instance (1-100); the next one is a 429 |
 | `NOTIFICATION_RETENTION_DAYS` | `90` | how long a notification is kept before `notifications-prune` deletes it (1-3650) |
+| `AUDIT_IMPORTANT_RETENTION_MONTHS` / `AUDIT_ROUTINE_RETENTION_DAYS` / `AUDIT_PARTITIONS_AHEAD` | `24` / `90` / `3` | how long the two tiers of the audit trail are kept (`audit-maintain` drops whole monthly partitions past it; 1-240 months / 1-3650 days) and how many months after the current one get a partition in advance (1-24) |
 | `SEED_DEMO_PASSWORD` | - | password of the `seed -demo` accounts; the command refuses to run in production |
 
 ## Pictures in S3/R2
@@ -129,7 +130,7 @@ AWS S3, SeaweedFS or MinIO. The API behaves the same; keys (`property/2026/11/<r
 ## Layout and dependency rules
 
 ```
-cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo] | media-upload | subscriptions-expire | invoices-send-automatic | invoices-send-reminders | notifications-prune | announcements-dispatch-due | worker; also the composition root (api.go builds the dependencies, router.go the router, commands.go migrate/seed, bridges.go the adapters between contexts): the only place that knows every layer
+cmd/rental-management/        the one binary: api | migrate [up|down|status] | seed [-demo] | media-upload | subscriptions-expire | invoices-send-automatic | invoices-send-reminders | notifications-prune | announcements-dispatch-due | audit-maintain | worker; also the composition root (api.go builds the dependencies, router.go the router, commands.go migrate/seed, bridges.go the adapters between contexts): the only place that knows every layer
 db/migrations/                goose migrations, embedded in the binary
 db/queries/<module>/          the SQL sqlc turns into Go (all of it generates into the one package internal/adapter/persistence/postgres/sqlc, committed, never edited by hand)
 tools/fetchlocations/         one-off download of the provinces/wards snapshot (internal/adapter/snapshot/locationdata/locations.json.gz)
@@ -960,6 +961,82 @@ POST /v1/contract-invitations/accept   {"token": "<64 characters>"}      or   {"
 - The demo seed offers **P105** to `tenant@rental.test` by id (starts in 14 days, `active`); the tenant's inbox shows it. Safe to
   repeat: nothing is made once the landlord has any invitation.
 
+### Admin (staff work, landlord applications, settings, legal documents, personal data)
+
+The tenth context, `admin`: `domain/admin/`, `usecase/admin/`, `adapter/http/admin/` (`adminhttp`) and
+`adapter/persistence/postgres/admin/` (`adminpg`). It works on tables other contexts own (`users`, `user_roles`,
+`user_sessions`) with queries of its own and knows no other context (`admin-does-not-know-other-contexts`,
+`other-contexts-do-not-know-admin`): the first building of a new landlord (`property`), the messages (`notification`), the
+revoked sessions (Redis) are ports adapted in `cmd/rental-management/admin.go`; its audit port is the real recorder (`bridges_audit.go`), and erasing an account blanks the address, device and session of that person's audit rows. Migration `00013` adds
+`users.erased_at|deleted_at`, `landlord_applications`, `landlord_profiles`, `legal_documents` (insert-only) and `app_settings`.
+Rules: [`docs/go-business-rules.md`](docs/go-business-rules.md) section 1 and the owner's decisions at its end.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/v1/admin/users` | `users.view` (admin, super admin) | paged; `?status`, `?role_name`, `?search` (one word, name or email, wildcards escaped), `?ward_code`, `?province_code`, `?sort_by=created_at\|name\|email`. Never the caller; **staff accounts only for a super admin** |
+| DELETE | `/v1/admin/users/{id}` | `users.delete` | soft delete, sessions revoked. Nobody deletes themselves or a super admin; an admin deletes only landlords, managers, tenants |
+| POST | `/v1/admin/users/bulk-delete` `{ids}` | `users.delete` | 1-100 ids; 200 `{done, failed[{id,name,message}]}`; an unknown id is skipped |
+| GET | `/v1/admin/roles` | `users.assign_roles` | the roles the caller may give (paged): admin gives landlord, manager, tenant; super admin all |
+| PUT | `/v1/admin/users/{id}/roles` `{roles, note}` | `users.assign_roles` | `roles: []` is a 422; nobody changes their own roles, gives `super_admin` or changes a super admin's; a staff role never mixes with another. Losing `landlord` needs no running contract (422 `roles`) and tells the landlord; gaining it sets up a profile and first building |
+| GET | `/v1/admin/users/{id}/landlord-impact` | `landlord_applications.review` | `{rooms, active_contracts, pending_registrations, unpaid_invoices, can_revoke}`; 404 for a non-landlord |
+| POST | `/v1/admin/users/{id}/revoke-landlord` `{note}` | `landlord_applications.review` | 204; rooms, contracts and profile stay |
+| GET/POST/DELETE | `/v1/my/landlord-application` | signed in, acting as tenant; POST **10/hour** | GET: the newest or `null`; POST 201 (waits for an admin, the admins - not the super admins - are told); DELETE withdraws the open one |
+| GET | `/v1/admin/landlord-applications` | `landlord_applications.review` | paged; `?status` (default `pending_review`), `?search`, `?sort_by=newest\|oldest\|name`; `meta.counts` per status |
+| GET | `/v1/admin/landlord-applications/{id}` | same | with `history` (the person's other applications) |
+| POST | `.../{id}/approve` `{note}`, `.../{id}/reject` `{note}` | same | 204; reject needs the note; approve adds the `landlord` role, a profile and a first building named after the business (cut to 50) |
+| POST | `/v1/admin/landlord-applications/bulk` `{action, ids, note}` | same | 200 `{done, failed}` |
+| GET/PUT | `/v1/landlord/profile` | landlord | PUT upserts; GET `null` before the first write |
+| GET | `/v1/admin/settings/history` | super admin (`settings.manage`) | feed (`has_more`) of `{key, from, to, changed_at, changed_by{id,name}}`, newest first, read from the audit trail (`setting.changed`) |
+| GET/PUT | `/v1/admin/settings` | super admin (`settings.manage`) | `{settings:[{key,value}]}` (`value: null` resets); only the keys of `domain/admin/settings.go`; 422 `settings.{i}.value` out of range; answers `{settings[], version}` |
+| GET/POST | `/v1/admin/legal/{terms\|privacy}` | super admin (`legal.manage`) | POST adds a **new version** (201 `{version}`) with both languages, a `change_summary` in both and a white-listed TipTap body |
+| GET | `/v1/admin/legal/{kind}/versions`, `.../{document_id}` | super admin | versions paged (default 10, max 50); an id of the other kind is a 404 |
+| GET | `/v1/legal/{kind}` | public | the newest version or `data: null` |
+| GET | `/v1/profile/legal-updates` | signed in | what was published since the caller accepted (the newest of each kind if never); `?per_page` max 20 |
+| POST | `/v1/profile/accept-terms` | signed in | stores the version in force |
+| GET | `/v1/profile/export` | signed in; **5/hour** | JSON download of the caller's data (no proofs, nothing about others) |
+| GET | `/v1/profile/erasure-check` | signed in | `{blockers[]}`: `running_rental_as_tenant`, `running_contract_as_landlord` |
+| DELETE | `/v1/profile` `{password, confirm}` | signed in; **5/hour** | erasure; staff, a wrong password or a blocker is a 422 |
+
+The version people must accept is the newest legal document of any kind (`TERMS_VERSION` until one is published); `GET /v1/auth/me`
+(`terms.current_version`, `needs_acceptance`) and registration use it through `identity.TermsVersions`, and staff are never asked.
+
+### Audit trail
+
+The eleventh context, `audit`: `domain/audit/` (actions and their tier, scrubbing, money redaction, who sees what, partition names and
+retention), `usecase/audit/` (`Recorder`, `Reader`, `Maintainer`), `adapter/http/audit/` (`audithttp`) and
+`adapter/persistence/postgres/audit/` (`auditpg`). It knows no other context and none knows it (`audit-does-not-know-other-contexts`,
+`other-contexts-do-not-know-audit`): each context's own audit port (`AuditRecorder`, admin's `Auditor`, identity's `Auditor`) is adapted
+to the one `Recorder` in `cmd/rental-management/bridges_audit.go`. Rules: [`docs/go-business-rules.md`](docs/go-business-rules.md) section 2.
+
+- **Tables** (migration `00014`): `audit_logs` (the *important* tier: money, rights, contracts, roles, settings; 24 months) and
+  `audit_activity` (the *routine* tier: `auth.login|login_failed|logout`, `invitation.lookup`; 90 days) have the same shape and are only
+  added to. No foreign keys (the trail outlives the rows it talks about). Both are `PARTITION BY RANGE (created_at)`, one partition per
+  month cut at midnight UTC, plus a default partition; the migration makes this month and the next three. The reference columns
+  (`room_id`, `contract_id`, `invoice_id`, `payment_id`, `target_user_id`) are plain uuids with partial indexes; `request_id` is text
+  (the middleware accepts any sane `X-Request-Id`). `session_id` is the id of the `user_sessions` row.
+- **Writing**: `Recorder.Record(ctx, Event)` runs in the transaction of `ctx` (so an entry commits or rolls back with its action). An
+  important entry that cannot be written fails the action; a routine one is written in a savepoint (`postgres.Isolated`) and a failure is
+  only logged. Who did it, in which role and session, from which address and device comes from the request (`pkg/reqctx`, filled by
+  `httpx.RequestID` and `RequireAuth`); a job has no request and is recorded as role `system`; a sign-in names its actor itself. The owner
+  of the data (`OwnerID`) becomes `acting_for_id` when somebody else acted. `changes` and `meta` are normalized and scrubbed (`password`,
+  `token`, `secret`... removed, `account_number` kept to its last four characters, over 8 KB replaced by `{"truncated":true,"bytes":N}`).
+  An action name outside the catalog (`domain/audit/action.go`) is refused; add the constant there when a context gets a new action.
+- **Recorded today**: accounts (`auth.register|email_confirmed|login|login_failed|logout|role_switched|password_changed|token_reuse`; a failed
+  sign-in keeps the SHA-256 of the email, never the address, and the reason), admin (users, roles, landlord applications and profiles,
+  settings, legal documents, terms, export, erasure), contracts and their invitations, invoices, payments and methods, plans and
+  subscriptions, listings, announcements and the invitee lookups. Not yet: see Known gaps.
+- **Maintenance**: `rental-management audit-maintain` (`make audit-maintain`, daily 03:00 in the worker) makes the partitions of this month
+  and `AUDIT_PARTITIONS_AHEAD` more and drops whole the partitions past their tier's retention. A month whose rows already sit in the
+  default partition cannot be made (logged, the run goes on).
+- **Erasure**: `Recorder.Scrub` (through admin's `Auditor.ScrubPersonalData`) sets `ip`, `user_agent` and `session_id` to NULL on every row
+  the erased person made, in both tables: the one exception to "only added to".
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/v1/admin/audit-logs` | staff + `audit.view` | feed `{data, meta{page, per_page, has_more}}`, default 50, max 100; `?actor_id`, `?actor_role`, `?action` (in the catalog), `?target_user_id`, `?room_id`, `?contract_id`, `?invoice_id`, `?from`, `?to` (days, ICT, `to` not before `from`), `?tier`. An admin does not see entries made by or about admins and super admins, nor `setting.changed`; **no staff reader sees amounts of money** (`•••`; plan and subscription entries keep theirs) |
+| GET | `/v1/my/activity` | signed in | both tiers, what the caller did and what was done to their account (default 20); what *others* did shows only their role (no name, no changes, no address); neighbouring identical entries of one second merge with `count` |
+| GET | `/v1/rooms/{id}/history`, `/v1/contracts/{id}/history`, `/v1/invoices/{id}/history` | landlord + `rooms\|contracts\|invoices.update` | important tier only, default 20; the landlord who owns it, anyone else a 404; a room's history includes its contracts and invoices (their entries carry the room) |
+
 ### Error codes
 
 Each code has a vi and en message (`errors.<code>`); a test fails if a code or a validation rule has no translation or
@@ -1104,6 +1181,7 @@ unchanged (for a one-off run or an external cron).
 |---|---|
 | `announcements-dispatch-due` | every `WORKER_DISPATCH_INTERVAL` (1 minute) |
 | `subscriptions-expire` | daily 00:15 |
+| `audit-maintain` | daily 03:00 |
 | `notifications-prune` | daily 03:30 |
 | `invoices-send-automatic` | daily 07:00 |
 | `invoices-send-reminders` | daily 08:00 |
@@ -1166,7 +1244,7 @@ unchanged (for a one-off run or an external cron).
 
 `make help` lists everything. Main targets: `check` (gofmt check + vet + unit tests), `lint`, `fmt`, `fmt-check`,
 `tidy`, `sqlc` (regenerate `internal/adapter/persistence/postgres/sqlc`; commit the result), `build`, `test`, `test-integration`, `up`/`down`/
-`logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `expire-subscriptions`, `send-invoices`, `send-reminders`, `prune-notifications`, `dispatch-announcements`, `worker`, `migrate-media`, `fetch-locations`, `dev`, `hooks`.
+`logs`, `migrate`/`migrate-down`/`migrate-status`, `seed`, `seed-demo`, `expire-subscriptions`, `send-invoices`, `send-reminders`, `prune-notifications`, `dispatch-announcements`, `audit-maintain`, `worker`, `migrate-media`, `fetch-locations`, `dev`, `hooks`.
 
 ## Git workflow
 
@@ -1212,6 +1290,13 @@ Done: phase 8, `payment` (schema; the landlord's payment methods with encrypted 
 pictures, confirm, reject, withdraw, the landlord's list, recorded payments, payment instructions with VietQR/MoMo links, signed
 proof links, the real payment ledger for invoices, the billing summary and payment filters on the contract lists, demo seed).
 
+Done: phase 10, `admin` (migration `00013`; user list/delete/bulk delete, roles and who may give what, landlord applications with
+approve/reject/bulk, the landlord profile and impact/revoke, the settings overrides, the insert-only legal documents with the white-listed
+rich text and `change_summary`, acceptance of the terms, the export, the erasure check and the erasure of an account). Emails of the
+applications are not sent.
+Done: phase 11, `audit` (migration `00014`; the two partitioned tables, the recorder behind every context's audit port, the staff's, own and per-object
+views, `audit-maintain`, the settings history, the scrub on erasure; see [Audit trail](#audit-trail)).
+
 In progress: phase 9, `notification`. **Batch 5 is done**: the worker (`rental-management worker`, `pkg/schedule`, Redis locks; see [Background jobs](#background-jobs)). **Batch 1 is done**: the inbox (migration `00011`; the typed kind catalog; the one real `Notifier` behind
 the five contexts' ports; the eight inbox routes with per-role inboxes; the prune command; the demo messages). **Batch 2 is done**:
 announcements through the notification channel (migration `00012`, the `announcement_audience` SQL function, admin and landlord routes,
@@ -1220,7 +1305,7 @@ reach, publish/unpublish/recall, scheduling with `announcements-dispatch-due`, t
 `/v1/media` route. **Batch 4 is done**: realtime push with server-sent events (ticket, stream, hub, Redis Pub/Sub, heartbeat, 15-minute streams).
 Still to come in this phase: the worker.
 
-Later phases (each module: migration, queries, service, handlers, tests): `notification` (announcements, popups), `report`, `stats`, `audit`, plus
+Later phases (each module: migration, queries, service, handlers, tests): `report`, `stats`, plus
 admin user management, landlord applications, manager hand-over and invitations, and social login.
 
 Pure rules of the Laravel project to port (as Go table tests, taking its `tests/Unit` cases as the starting point):
@@ -1239,7 +1324,7 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Plan: `PlanAssignment`, `PlanLimit` | `internal/domain/plan` (`rules.go`, ported and tested; `Interval.EndsAfter` is Laravel's `BillingInterval::endsAfter`, `EffectivePlan` the "subscription else default plan" of `PlanService::planFor`) |
 | Statistics: `MonthRange`, `OccupancyCalculator`, `Ratio` | `internal/stats` |
 | Announcement: `AudienceCriteria`, `DayRange`, `PopupVisibility` | `internal/notification` |
-| Audit: `MoneyRedaction` | `internal/audit` |
+| Audit: `MoneyRedaction`, `AuditAction`, payload scrubbing | `internal/domain/audit` (ported and tested) |
 | Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/domain/identity` (social login) |
 | Invitation: `InvitationAudience` | `internal/invitation` |
 | Legal: `RichText` | `internal/legal` |
@@ -1249,7 +1334,7 @@ Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/roo
 `/contract-invitations`, `/invoices` (done), `/invoices/{id}/payments` (done), `/my/payment-methods` (done), `/managers`; account
 `/me/invoices`, `/notifications` (done); public `/public/rooms` (done); admin
 `/admin/users`, `/admin/landlord-applications`, `/admin/announcements`,
-`/admin/audit`; others `/reports`, `/stats/landlord`, `/stats/platform`.
+`/admin/audit-logs` (done); others `/reports`, `/stats/landlord`, `/stats/platform`.
 
 ### Web impact (separate workstream)
 
@@ -1262,6 +1347,22 @@ new logout-all, change-password, verify/resend email), list pages (a `meta.page`
 as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
+
+- **Audit trail**: not recorded yet, because the context or the flow does not exist or has no audit port: rooms and buildings (`room.*`,
+  `building.*`: the property use cases have no audit port; the room's history today holds only listing, contract, invoice and payment entries),
+  reports, managers (`manager.*`), social login and password reset (`auth.oauth_*`, `auth.password_reset*`), the profile and avatar
+  (`user.profile_updated|avatar_changed`), the invitations preference and the opt-out link (`user.invitations_preference_changed`,
+  `invitation.opted_out`), the contract-invitation approve/reject of a manager. The action catalog already holds those names. The actions have
+  no translated labels in the API (the web labels them by `action`). The history routes are for the owning landlord only (a manager the
+  landlord handed a room to does not read it; no manager context yet). `request_id` is text, not uuid. Money keys hidden from the staff are
+  listed in `domain/audit/money.go` (`*_vnd` included); a new action that records money under another key must add it, and no test yet runs
+  every real money flow through the admin view.
+- **Admin**: the `/config` endpoint and
+  the `X-Config-Version` header do not exist, so a changed setting is only stored (nothing reads the overrides yet except `GET /admin/settings`);
+  no email for landlord applications (only the in-app notices); a deleted or erased account is hidden from the other contexts' own reads only
+  where they already filter by status (the erased one is `inactive`); the export has no reports (no report context yet); profile
+  preferences stay at `PUT /v1/me/preferences`; `PUT /v1/admin/settings` takes and answers a `{settings}` body (the rules did not fix the shape);
+  an admin who revokes the only role of a landlord leaves the `tenant` role.
 
 - **Notifications (inbox, announcements)**: the inbox and the announcements' notification channel exist. Popups, pictures and
   statistics exist (no cache on the popup audience check or the statistics; popups cost up to 20 indexed audience lookups per app open).

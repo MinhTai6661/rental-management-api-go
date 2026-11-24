@@ -20,6 +20,8 @@ import (
 	"rental-management/config"
 	"rental-management/internal/adapter/filestore"
 	httpadapter "rental-management/internal/adapter/http"
+	adminhttp "rental-management/internal/adapter/http/admin"
+	audithttp "rental-management/internal/adapter/http/audit"
 	contracthttp "rental-management/internal/adapter/http/contract"
 	"rental-management/internal/adapter/http/httpx"
 	identityhttp "rental-management/internal/adapter/http/identity"
@@ -102,7 +104,8 @@ func runAPI(ctx context.Context) error {
 	}
 	limiter := ratelimit.NewRedis(rdb, cfg.RedisKeyPrefix)
 
-	auth, err := newIdentity(cfg, log, pool, rdb)
+	legalDocs := newAdmin(cfg, log, pool, adminPorts{}).legal // the version of the terms comes from the published documents
+	auth, err := newIdentity(cfg, log, pool, rdb, termsVersions{legal: legalDocs})
 	if err != nil {
 		return err
 	}
@@ -153,6 +156,9 @@ func runAPI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	trail := newAudit(cfg, log, pool)
+	staff := newAdmin(cfg, log, pool, adminPorts{rdb: rdb, notify: inbox.deliveries, buildings: properties.buildings})
 
 	announcementImages := notificationhttp.NewImageHandler(inbox.images, files, httpx.NewBinder(), cfg.MediaMaxUploadBytes)
 
@@ -217,6 +223,18 @@ func runAPI(ctx context.Context) error {
 						announcementImages, notificationhttp.NewStatsHandler(inbox.stats), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
+					binder := httpx.NewBinder()
+					apps := adminhttp.NewApplicationHandler(staff.applications, binder)
+					legal := adminhttp.NewLegalHandler(staff.legal, binder)
+					adminhttp.MountAdmin(v1, adminhttp.NewUserHandler(staff.users, binder), apps,
+						adminhttp.NewSettingsHandler(staff.settings, binder), legal, authenticator, limiter)
+					adminhttp.MountSelf(v1, apps, adminhttp.NewProfileHandler(staff.profiles, binder), legal,
+						adminhttp.NewPersonalDataHandler(staff.personal, binder), authenticator, limiter)
+				},
+				func(v1 *gin.RouterGroup) {
+					audithttp.Mount(v1, audithttp.NewHandler(trail.reader), authenticator)
+				},
+				func(v1 *gin.RouterGroup) {
 					invitationhttp.MountInvitees(v1, invitationhttp.NewInviteeHandler(invitees, httpx.NewBinder()), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
@@ -257,7 +275,7 @@ func runAPI(ctx context.Context) error {
 // newIdentity builds the account use cases on their adapters: Postgres, the revocation store in Redis, argon2id
 // and JWT, and the mailer (SMTP, or the log when no SMTP server is set, which RequireAPI only allows outside
 // production).
-func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client) (*usecase.Auth, error) {
+func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *redis.Client, terms usecase.TermsVersions) (*usecase.Auth, error) {
 	mailer, renderer, err := newMailer(cfg, log)
 	if err != nil {
 		return nil, err
@@ -275,6 +293,8 @@ func newIdentity(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, rdb *r
 		Mailer:        mailadapter.NewVerificationMailer(mailer, renderer, cfg.WebURL),
 		Clock:         usecase.ClockFunc(time.Now),
 		Log:           log,
+		Audit:         identityAudit{r: newAuditRecorder(log, pool)},
+		Terms:         terms,
 	}, usecase.Options{
 		TermsVersion:       cfg.TermsVersion,
 		RefreshTTL:         cfg.RefreshTokenTTL,
@@ -318,6 +338,7 @@ func newPlans(log *slog.Logger, pool *pgxpool.Pool, n *notificationuc.Deliveries
 	deps := planuc.Deps{
 		Tx: postgres.NewTxManager(pool), Plans: planpg.NewPlanRepository(pool), Subs: planpg.NewSubscriptionRepository(pool),
 		Accounts: planpg.NewAccounts(pool), Usage: planpg.NewUsage(pool), Clock: planuc.ClockFunc(time.Now), Log: log,
+		Audit: planAudit{r: newAuditRecorder(log, pool)},
 	}
 	if n != nil {
 		deps.Notifier = planNotifier{m: n}
@@ -346,7 +367,7 @@ func newListings(log *slog.Logger, pool *pgxpool.Pool, p plans, n *notificationu
 	deps := listinguc.Deps{
 		Tx: postgres.NewTxManager(pool), Listings: listingpg.NewListingRepository(pool), Rooms: rooms,
 		Offers: listingpg.NewOfferRepository(pool), Seed: rooms, Priority: searchPriority{limits: p.limits},
-		Clock: listinguc.ClockFunc(time.Now), Log: log,
+		Clock: listinguc.ClockFunc(time.Now), Log: log, Audit: listingAudit{r: newAuditRecorder(log, pool)},
 	}
 	if n != nil {
 		deps.Notifier = listingNotifier{m: n}
@@ -391,6 +412,7 @@ func newInvitees(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*invi
 	}
 	return invitationuc.NewInvitees(invitationuc.Deps{
 		People: invitationpg.NewPeopleRepository(pool), Blocks: invitationpg.NewEmailBlockRepository(pool), Signer: signer, Log: log,
+		Audit: invitationAudit{r: newAuditRecorder(log, pool)},
 	}, invitationuc.Options{WebURL: cfg.WebURL}), nil
 }
 
@@ -404,7 +426,7 @@ func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plan
 	deps := invoiceuc.Deps{
 		Tx: postgres.NewTxManager(pool), Invoices: invoicepg.NewInvoiceRepository(pool), Contracts: invoicepg.NewContractReader(pool),
 		Charges: invoicepg.NewChargeReader(pool), Plans: planFeatures{limits: p.limits}, Tokens: security.ShareTokens{}, Sealer: sealer,
-		Ledger: ledger, Clock: invoiceuc.ClockFunc(time.Now), Log: log,
+		Ledger: ledger, Clock: invoiceuc.ClockFunc(time.Now), Log: log, Audit: invoiceAudit{r: newAuditRecorder(log, pool)},
 	}
 	if n != nil {
 		deps.Notifier = invoiceNotifier{m: n}
@@ -449,7 +471,7 @@ func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p pla
 		Tx: postgres.NewTxManager(pool), Contracts: contractpg.NewContractRepository(pool), Rooms: reader, RoomState: status,
 		Plans: planLimits{limits: p.limits}, Clock: contractuc.ClockFunc(time.Now), Log: log,
 		Invitations: contractpg.NewInvitationRepository(pool), Invitees: inv.invitees, Tokens: security.ShareTokens{},
-		Sealer: inv.sealer, Mailer: inv.mailer,
+		Sealer: inv.sealer, Mailer: inv.mailer, Audit: contractAudit{r: newAuditRecorder(log, pool)},
 	}
 	if n != nil {
 		deps.Notifier = contractNotifier{m: n}

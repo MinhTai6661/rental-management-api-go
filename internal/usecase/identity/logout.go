@@ -24,6 +24,7 @@ func (a *Auth) Logout(ctx context.Context, p authz.Principal, refresh string) er
 	if err := a.sessions.Revoke(ctx, target, a.clock.Now(), "logout"); err != nil {
 		return err
 	}
+	a.auditLogout(ctx, p, target, map[string]any{"everywhere": false})
 	return a.blockTokenAndSessions(ctx, p, []string{target.String()})
 }
 
@@ -37,7 +38,21 @@ func (a *Auth) LogoutAll(ctx context.Context, p authz.Principal) error {
 	if err != nil {
 		return err
 	}
+	a.auditLogout(ctx, p, uuid.Nil, map[string]any{"everywhere": true, "sessions": len(ids)})
 	return a.blockTokenAndSessions(ctx, p, uuidStrings(ids))
+}
+
+// auditLogout records a sign-out; it never fails the request (the entry is routine).
+func (a *Auth) auditLogout(ctx context.Context, p authz.Principal, session uuid.UUID, meta map[string]any) {
+	userID, err := uuid.Parse(p.UserID)
+	if err != nil {
+		return
+	}
+	if err := a.audit.Record(ctx, AuditEvent{
+		Action: AuditLogout, ActorID: userID, ActorRole: p.Role, SessionID: session, TargetUserID: &userID, Meta: meta,
+	}); err != nil {
+		a.log.Warn("could not record a sign-out", "error", err)
+	}
 }
 
 // blockTokenAndSessions stops the caller's current access token and the access tokens of the closed sessions.

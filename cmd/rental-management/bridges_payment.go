@@ -187,7 +187,7 @@ func newPayments(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, files 
 		Images: proofImages{inner: imageproc.New(imaging.NewProcessor(imaging.Limits{
 			MaxBytes: maxBytes, MaxDimension: cfg.MediaMaxDimension, ThumbMaxSize: cfg.MediaThumbnailMaxSize,
 		}, cfg.ImageProcessingConcurrency))},
-		Links: links, Sealer: sealer, Clock: paymentuc.ClockFunc(time.Now), Log: log,
+		Links: links, Sealer: sealer, Clock: paymentuc.ClockFunc(time.Now), Log: log, Audit: paymentAudit{r: newAuditRecorder(log, pool)},
 	}
 	if n != nil {
 		deps.Notifier = paymentNotifier{m: n}

@@ -8,6 +8,7 @@ import (
 
 	"rental-management/internal/adapter/http/apperr"
 	"rental-management/pkg/authz"
+	"rental-management/pkg/reqctx"
 )
 
 const principalKey = "httpx.principal"
@@ -31,7 +32,7 @@ func RequireAuth(auth Authenticator) gin.HandlerFunc {
 			Fail(c, err)
 			return
 		}
-		c.Set(principalKey, principal)
+		setPrincipal(c, principal)
 		c.Next()
 	}
 }
@@ -50,7 +51,7 @@ func AuthenticateIfPresent(auth Authenticator) gin.HandlerFunc {
 			Fail(c, err)
 			return
 		}
-		c.Set(principalKey, principal)
+		setPrincipal(c, principal)
 		c.Next()
 	}
 }
@@ -105,4 +106,10 @@ func bearerToken(header string) string {
 		return ""
 	}
 	return strings.TrimSpace(token)
+}
+
+// setPrincipal stores the caller for the handlers and tells the layers below (the audit trail) who is acting.
+func setPrincipal(c *gin.Context, p authz.Principal) {
+	c.Set(principalKey, p)
+	c.Request = c.Request.WithContext(reqctx.WithActor(c.Request.Context(), p.UserID, p.Role, p.SessionID))
 }

@@ -51,7 +51,13 @@ func (a *Auth) ChangePassword(ctx context.Context, p authz.Principal, current, n
 			return err
 		}
 		closed, err = a.sessions.RevokeAllOfUser(ctx, userID, &keep, now, "password_change")
-		return err
+		if err != nil {
+			return err
+		}
+		return a.audit.Record(ctx, AuditEvent{
+			Action: AuditPasswordChanged, ActorID: userID, ActorRole: p.Role, SessionID: keep, TargetUserID: &userID,
+			Meta: map[string]any{"sessions_closed": len(closed)},
+		})
 	})
 	if err != nil {
 		return err

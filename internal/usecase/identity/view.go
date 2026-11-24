@@ -23,6 +23,10 @@ func (a *Auth) userView(ctx context.Context, id uuid.UUID, role string) (UserVie
 		return UserView{}, err
 	}
 
+	terms, err := a.termsVersion(ctx)
+	if err != nil {
+		return UserView{}, err
+	}
 	view := UserView{
 		ID: profile.ID.String(), Email: profile.Email, FullName: profile.FullName, PhoneNumber: profile.PhoneNumber,
 		Status: profile.Status, AddressDetail: profile.AddressDetail, Roles: held.Roles, ActiveRole: role,
@@ -30,9 +34,9 @@ func (a *Auth) userView(ctx context.Context, id uuid.UUID, role string) (UserVie
 		AcceptsInvitations: profile.AcceptsInvitations,
 		Terms: TermsView{
 			AcceptedVersion: profile.TermsVersion,
-			CurrentVersion:  a.opts.TermsVersion,
+			CurrentVersion:  terms,
 			// Staff accounts are not asked to accept the terms of renting.
-			NeedsAcceptance: !domain.HasStaffRole(held.Roles) && deref(profile.TermsVersion) != a.opts.TermsVersion,
+			NeedsAcceptance: !domain.HasStaffRole(held.Roles) && deref(profile.TermsVersion) != terms,
 		},
 	}
 	if profile.WardCode != nil && profile.WardName != nil && profile.ProvinceCode != nil && profile.ProvinceName != nil {

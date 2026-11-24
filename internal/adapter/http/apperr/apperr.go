@@ -156,6 +156,24 @@ const (
 	RuleLinkNotAllowed = "link_not_allowed"
 	RuleAfterOrEqual   = "after_or_equal"
 	RuleMaxDays        = "max_days"
+
+	// Admin rules.
+	RuleStaffRolesMixed      = "staff_roles_mixed"
+	RuleHasActiveContracts   = "has_active_contracts"
+	RuleAlreadyLandlord      = "already_landlord"
+	RuleNotRenter            = "not_renter"
+	RuleAlreadyPending       = "already_pending"
+	RuleNotReviewable        = "not_reviewable"
+	RuleStaffCannotErase     = "staff_cannot_erase"
+	RuleErasureBlocked       = "erasure_blocked"
+	RuleRichTextStructure    = "richtext_structure"
+	RuleRichTextNodeType     = "richtext_node_type"
+	RuleRichTextMarkType     = "richtext_mark_type"
+	RuleRichTextHeadingLevel = "richtext_heading_level"
+	RuleRichTextLink         = "richtext_link"
+	RuleRichTextTooLarge     = "richtext_too_large"
+	RuleRichTextNoHeading    = "richtext_no_heading"
+	RuleRichTextEmpty        = "richtext_empty"
 )
 
 // Codes lists every error code; each needs a translation under "errors.<code>".
@@ -191,6 +209,7 @@ func Rules() []string {
 		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
 		RuleTitleBodyPair, RuleOneLanguage, RuleNowhereToGo, RuleCTAIncomplete, RuleURLUnsafe, RuleNoPeople, RuleAudienceEmpty,
 		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays,
+		RuleStaffRolesMixed, RuleHasActiveContracts, RuleAlreadyLandlord, RuleNotRenter, RuleAlreadyPending, RuleNotReviewable, RuleStaffCannotErase, RuleErasureBlocked, RuleRichTextStructure, RuleRichTextNodeType, RuleRichTextMarkType, RuleRichTextHeadingLevel, RuleRichTextLink, RuleRichTextTooLarge, RuleRichTextNoHeading, RuleRichTextEmpty,
 	}
 }
 

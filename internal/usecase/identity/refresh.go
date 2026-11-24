@@ -16,6 +16,7 @@ func (a *Auth) Refresh(ctx context.Context, raw string, client Client) (Tokens, 
 		out       Tokens
 		fail      error
 		closedSID []string
+		reused    *domain.RefreshToken
 	)
 	err := a.tx.WithinTx(ctx, func(ctx context.Context) error {
 		now := a.clock.Now()
@@ -46,6 +47,7 @@ func (a *Auth) Refresh(ctx context.Context, raw string, client Client) (Tokens, 
 			return nil
 		case domain.RefreshReuse:
 			a.log.Warn("refresh token reused: session closed", "user_id", rt.UserID, "session_id", rt.SessionID)
+			reused = &rt
 			return closeSession("reuse_detected")
 		}
 
@@ -80,6 +82,14 @@ func (a *Auth) Refresh(ctx context.Context, raw string, client Client) (Tokens, 
 	})
 	if err != nil {
 		return Tokens{}, err
+	}
+	if reused != nil {
+		// Recorded after the commit: the closing of the session must stand even if the entry cannot be written.
+		if err := a.audit.Record(ctx, AuditEvent{
+			Action: AuditTokenReuse, ActorID: reused.UserID, SessionID: reused.SessionID, TargetUserID: &reused.UserID,
+		}); err != nil {
+			a.log.Error("could not record a reused refresh token", "error", err)
+		}
 	}
 	if len(closedSID) > 0 {
 		// The session is already closed in the database; this also stops the access tokens it still has.

@@ -28,7 +28,7 @@ SELECT code FROM wards ORDER BY code LIMIT 1;
 
 -- name: GetUserByEmail :one
 SELECT id, email, password_hash, status, last_active_role, email_verified_at, full_name
-FROM users WHERE email = @email::text;
+FROM users WHERE email = @email::text AND deleted_at IS NULL;
 
 -- name: GetUserProfile :one
 -- The account with its ward and province, for the user object of the API.
@@ -39,7 +39,7 @@ SELECT u.id, u.email, u.full_name, u.phone_number, u.status, u.address_detail, u
 FROM users u
 LEFT JOIN wards w ON w.code = u.ward_code
 LEFT JOIN provinces p ON p.code = w.province_code
-WHERE u.id = $1;
+WHERE u.id = $1 AND u.deleted_at IS NULL;
 
 -- name: GetAuthUser :one
 -- Everything a request needs to know about its caller, in one query.
@@ -48,7 +48,7 @@ SELECT u.status, u.last_active_role,
 FROM users u
 LEFT JOIN user_roles ur ON ur.user_id = u.id
 LEFT JOIN roles r ON r.code = ur.role_code
-WHERE u.id = $1
+WHERE u.id = $1 AND u.deleted_at IS NULL
 GROUP BY u.id;
 
 -- name: GetPasswordHash :one

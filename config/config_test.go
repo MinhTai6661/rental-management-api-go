@@ -399,3 +399,17 @@ func TestWorkerSettings(t *testing.T) {
 		t.Fatalf("a daily interval must be accepted: %+v %v", cfg, err)
 	}
 }
+
+func TestAuditRetention(t *testing.T) {
+	cfg, err := parse(map[string]string{})
+	if err != nil || cfg.AuditImportantRetentionMonths != 24 || cfg.AuditRoutineRetentionDays != 90 || cfg.AuditPartitionsAhead != 3 {
+		t.Fatalf("defaults 24 months, 90 days, 3 ahead: %+v %v", cfg, err)
+	}
+	for name, v := range map[string]string{
+		"AUDIT_IMPORTANT_RETENTION_MONTHS": "0", "AUDIT_ROUTINE_RETENTION_DAYS": "3651", "AUDIT_PARTITIONS_AHEAD": "25",
+	} {
+		if _, err := parse(map[string]string{name: v}); err == nil {
+			t.Errorf("%s=%s must be refused", name, v)
+		}
+	}
+}

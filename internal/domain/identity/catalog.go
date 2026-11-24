@@ -54,6 +54,8 @@ func Permissions() []Permission {
 		Permission{"landlord_applications.review", "approve or reject landlord applications"},
 		Permission{"my_listings.manage", "manage one's own listings"},
 		Permission{"listings.review", "approve or reject listings"},
+		Permission{"settings.manage", "change the system settings"},
+		Permission{"legal.manage", "publish the terms of use and the privacy policy"},
 	)
 	slices.SortFunc(all, func(a, b Permission) int {
 		switch {
@@ -73,6 +75,7 @@ func RolePermissions() map[string][]string {
 		authz.RoleSuperAdmin: {
 			"users.manage", "roles.manage", "reports.manage", "subscriptions.manage", "announcements.send",
 			"landlord_applications.review", "listings.review", "audit.view", "stats.admin", "stats.system",
+			"settings.manage", "legal.manage",
 		},
 		authz.RoleAdmin: {
 			"users.manage", "reports.manage", "subscriptions.manage", "announcements.send",

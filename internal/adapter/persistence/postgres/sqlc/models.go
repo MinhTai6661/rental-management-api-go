@@ -104,6 +104,17 @@ type InvoiceItem struct {
 	DisplayOrder int16
 }
 
+type LandlordProfile struct {
+	UserID        uuid.UUID
+	BusinessName  string
+	Phone         *string
+	WardCode      *int32
+	AddressDetail *string
+	Description   *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type Listing struct {
 	ID            uuid.UUID
 	RoomID        uuid.UUID
