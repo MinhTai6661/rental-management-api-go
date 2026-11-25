@@ -52,7 +52,7 @@ func (c *core) stage(ctx context.Context, data []byte) (staged, error) {
 	if err := c.files.Put(ctx, file, img.Data, img.ContentType); err != nil {
 		return staged{}, err
 	}
-	if err := c.files.Put(ctx, thumb, img.Thumb, "image/jpeg"); err != nil {
+	if err := c.files.Put(ctx, thumb, img.Thumb, "image/webp"); err != nil {
 		c.deleteFiles(ctx, []string{file})
 		return staged{}, err
 	}

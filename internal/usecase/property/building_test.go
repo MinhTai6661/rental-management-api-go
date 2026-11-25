@@ -3,6 +3,7 @@ package property
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -169,6 +170,15 @@ func TestCopyBuildingDuplicatesTheFilesAndTheRooms(t *testing.T) {
 	}
 	if len(w.files.files) != 4 || len(w.media.building) != 1 {
 		t.Errorf("every file is duplicated once: %v", w.files.keys())
+	}
+	jpgThumbs := 0
+	for _, k := range w.files.keys() {
+		if strings.HasSuffix(k, "_thumb.jpg") {
+			jpgThumbs++
+		}
+	}
+	if jpgThumbs != 2 {
+		t.Errorf("a copied legacy JPEG thumbnail keeps its .jpg key: %v", w.files.keys())
 	}
 	for _, step := range []string{"follow charges", "copy own charges", "cover from building"} {
 		if !w.c.has(step) {

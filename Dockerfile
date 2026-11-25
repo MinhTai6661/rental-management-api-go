@@ -12,7 +12,7 @@
 # This file is only written, never built by tooling here: build it yourself, e.g.
 #   docker build -t rental-management-api-go:local .
 
-FROM golang:1.26.11 AS build
+FROM golang:1.27.4 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-mod=readonly
 

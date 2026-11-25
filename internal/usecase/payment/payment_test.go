@@ -612,8 +612,17 @@ func TestOpenProofNeedsAValidLinkAndAKnownFile(t *testing.T) {
 		}
 	}
 
-	// A payment from before small copies existed shows the full picture instead.
+	// A proof from before thumbnails became WebP has a "_thumb.jpg" copy, which is served.
+	legacy := s.w.files[domain.ThumbKey(p.ProofKeys[0])]
+	s.w.files[domain.LegacyThumbKey(p.ProofKeys[0])] = legacy
 	delete(s.w.files, domain.ThumbKey(p.ProofKeys[0]))
+	if rc, _, err := s.pay.OpenProof(ctx, p.ID, "0_thumb.webp", future, "ok"); err != nil {
+		t.Fatalf("legacy thumb: %v", err)
+	} else {
+		_ = rc.Close()
+	}
+	// A payment from before small copies existed shows the full picture instead.
+	delete(s.w.files, domain.LegacyThumbKey(p.ProofKeys[0]))
 	rc, _, err = s.pay.OpenProof(ctx, p.ID, "0_thumb.webp", future, "ok")
 	if err != nil {
 		t.Fatal(err)

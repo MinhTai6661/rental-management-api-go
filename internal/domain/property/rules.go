@@ -339,5 +339,5 @@ func RoundArea(v float64) float64 {
 // unguessable and never reused, so the files can be cached for ever.
 func MediaKeys(now time.Time, random [16]byte, ext string) (file, thumb string) {
 	base := fmt.Sprintf("%s%04d/%02d/%x", MediaKeyPrefix, now.Year(), int(now.Month()), random[:])
-	return base + "." + ext, base + "_thumb.jpg"
+	return base + "." + ext, base + "_thumb.webp"
 }

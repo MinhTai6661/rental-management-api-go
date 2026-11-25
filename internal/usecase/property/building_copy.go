@@ -235,6 +235,10 @@ func (c *core) duplicateFiles(ctx context.Context, media []domain.Media) ([]doma
 		if err != nil {
 			return out, err
 		}
+		// Keep the kind of the source thumbnail: a copy keeps the bytes, and the key's extension names the type.
+		if strings.HasSuffix(m.ThumbKey, ".jpg") {
+			thumb = strings.TrimSuffix(thumb, ".webp") + ".jpg"
+		}
 		if err := c.files.Copy(ctx, m.FileKey, file); err != nil {
 			if errors.Is(err, domain.ErrFileNotFound) {
 				c.log.Warn("copy building: source picture file missing", "key", m.FileKey)

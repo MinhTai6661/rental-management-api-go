@@ -8,7 +8,7 @@ name: rental-management
 
 services:
   api:
-    image: golang:1.26.11
+    image: golang:1.27.4
     container_name: rental_management_api
     working_dir: /src
     # air rebuilds and restarts the binary when a .go file changes (see .air.toml).
@@ -62,7 +62,7 @@ services:
   # The background jobs (see README "Background jobs"): `make worker` or `docker compose --profile worker up worker`.
   # Several workers may run at once; a Redis lock makes each job run on one of them only.
   worker:
-    image: golang:1.26.11
+    image: golang:1.27.4
     container_name: rental_management_worker
     profiles: ["worker"]
     working_dir: /src

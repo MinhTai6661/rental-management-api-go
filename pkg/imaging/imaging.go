@@ -2,7 +2,7 @@
 //
 // The web app already scales pictures and encodes them as WebP; the server only verifies them. What it stores
 // holds no metadata (EXIF/GPS): a WebP has its EXIF and XMP chunks removed, a JPEG or PNG is decoded and written
-// again as JPEG (Go has no WebP encoder and we take no cgo dependency for one).
+// again as lossy WebP (pure-Go encoder from github.com/kolesa-team/go-webp, no cgo). Everything stored is WebP.
 package imaging
 
 import (
@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/jpeg"
 	_ "image/png" // registers the PNG decoder for image.Decode
 	"math"
 	"net/http"
+
+	"github.com/kolesa-team/go-webp/v2/encoder"
+	"github.com/kolesa-team/go-webp/v2/webp"
 
 	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // registers the WebP decoder for image.Decode
@@ -31,8 +33,8 @@ var (
 )
 
 const (
-	storedJPEGQuality = 85
-	thumbJPEGQuality  = 80
+	storedWebPQuality = 85
+	thumbWebPQuality  = 80
 	// sniffBytes is how much of the file http.DetectContentType looks at.
 	sniffBytes = 512
 )
@@ -47,11 +49,11 @@ type Limits struct {
 // Result is a verified picture ready to store.
 type Result struct {
 	Data        []byte // the picture to store
-	ContentType string // "image/webp" or "image/jpeg"
-	Ext         string // "webp" or "jpg"
+	ContentType string // always "image/webp"
+	Ext         string // always "webp"
 	Width       int
 	Height      int
-	Thumb       []byte // JPEG
+	Thumb       []byte // WebP
 }
 
 // Processor verifies pictures; at most `concurrency` full decodes run at once.
@@ -108,15 +110,16 @@ func (p *Processor) Process(ctx context.Context, data []byte) (Result, error) {
 	}
 	res := Result{Width: cfg.Width, Height: cfg.Height}
 	if contentType == "image/webp" {
+		// A WebP is kept as it is (the client already encoded it), minus its metadata.
 		if res.Data, err = StripWebPMetadata(data); err != nil {
 			return Result{}, err
 		}
 		res.ContentType, res.Ext = "image/webp", "webp"
 	} else {
-		if res.Data, err = encodeJPEG(onWhite(img, img.Bounds().Dx(), img.Bounds().Dy()), storedJPEGQuality); err != nil {
+		if res.Data, err = encodeWebP(onWhite(img, img.Bounds().Dx(), img.Bounds().Dy()), storedWebPQuality); err != nil {
 			return Result{}, err
 		}
-		res.ContentType, res.Ext = "image/jpeg", "jpg"
+		res.ContentType, res.Ext = "image/webp", "webp"
 	}
 	if res.Thumb, err = p.thumbnail(img); err != nil {
 		return Result{}, err
@@ -124,7 +127,7 @@ func (p *Processor) Process(ctx context.Context, data []byte) (Result, error) {
 	return res, nil
 }
 
-// thumbnail scales img so its longest side is ThumbMaxSize (never enlarging) and encodes it as JPEG.
+// thumbnail scales img so its longest side is ThumbMaxSize (never enlarging) and encodes it as WebP.
 func (p *Processor) thumbnail(img image.Image) ([]byte, error) {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	longest := max(w, h)
@@ -135,10 +138,10 @@ func (p *Processor) thumbnail(img image.Image) ([]byte, error) {
 	dst := image.NewRGBA(image.Rect(0, 0, tw, th))
 	xdraw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, xdraw.Src)
 	xdraw.BiLinear.Scale(dst, dst.Bounds(), img, img.Bounds(), xdraw.Over, nil)
-	return encodeJPEG(dst, thumbJPEGQuality)
+	return encodeWebP(dst, thumbWebPQuality)
 }
 
-// onWhite copies img onto an opaque white canvas, so transparency becomes white (JPEG has no alpha).
+// onWhite copies img onto an opaque white canvas, so transparency becomes white (stored pictures are opaque, which keeps WebP small).
 func onWhite(img image.Image, w, h int) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	xdraw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, xdraw.Src)
@@ -146,10 +149,14 @@ func onWhite(img image.Image, w, h int) *image.RGBA {
 	return dst
 }
 
-func encodeJPEG(img image.Image, quality int) ([]byte, error) {
+func encodeWebP(img image.Image, quality float32) ([]byte, error) {
+	opts, err := encoder.NewLossyEncoderOptions(encoder.PresetPhoto, quality)
+	if err != nil {
+		return nil, fmt.Errorf("webp options: %w", err)
+	}
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
-		return nil, fmt.Errorf("encode jpeg: %w", err)
+	if err := webp.Encode(&buf, img, opts); err != nil {
+		return nil, fmt.Errorf("encode webp: %w", err)
 	}
 	return buf.Bytes(), nil
 }

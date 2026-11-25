@@ -29,7 +29,7 @@ func (c *core) storeProofs(ctx context.Context, pictures [][]byte) ([]string, er
 			return nil, err
 		}
 		keys = append(keys, key)
-		if err := c.files.Put(ctx, domain.ThumbKey(key), img.Thumb, "image/jpeg"); err != nil {
+		if err := c.files.Put(ctx, domain.ThumbKey(key), img.Thumb, "image/webp"); err != nil {
 			c.removeFiles(ctx, keys)
 			return nil, err
 		}
@@ -54,7 +54,7 @@ func (c *core) removeFiles(ctx context.Context, keys []string) {
 	}
 	all := make([]string, 0, 2*len(keys))
 	for _, k := range keys {
-		all = append(all, k, domain.ThumbKey(k))
+		all = append(all, k, domain.ThumbKey(k), domain.LegacyThumbKey(k))
 	}
 	if err := c.files.Delete(context.WithoutCancel(ctx), all...); err != nil {
 		c.log.Warn("remove proof files", "error", err, "files", len(all))
@@ -80,9 +80,12 @@ func (s *Payments) OpenProof(ctx context.Context, paymentID uuid.UUID, file stri
 		return nil, FileInfo{}, domain.ErrNotFound
 	}
 	if thumb {
-		rc, info, err := s.files.Open(ctx, domain.ThumbKey(keys[index]))
-		if err == nil || !errors.Is(err, domain.ErrFileNotFound) {
-			return rc, info, err
+		// Proofs stored before thumbnails became WebP have a "_thumb.jpg" copy instead.
+		for _, key := range []string{domain.ThumbKey(keys[index]), domain.LegacyThumbKey(keys[index])} {
+			rc, info, err := s.files.Open(ctx, key)
+			if err == nil || !errors.Is(err, domain.ErrFileNotFound) {
+				return rc, info, err
+			}
 		}
 	}
 	rc, info, err := s.files.Open(ctx, keys[index])

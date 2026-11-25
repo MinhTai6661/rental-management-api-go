@@ -1,6 +1,6 @@
 module rental-management
 
-go 1.26.11
+go 1.27.4
 
 require (
 	github.com/caarlos0/env/v11 v11.4.2
@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/johannesboyne/gofakes3 v1.3.0
+	github.com/kolesa-team/go-webp/v2 v2.0.2
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pressly/goose/v3 v3.30.1

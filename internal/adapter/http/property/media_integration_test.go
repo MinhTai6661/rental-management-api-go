@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/kolesa-team/go-webp/v2/webp"
 
 	"rental-management/internal/adapter/http/apperr"
 	usecase "rental-management/internal/usecase/property"
@@ -203,30 +204,33 @@ func TestUploadWebPStripsMetadataAndMakesAThumbnail(t *testing.T) {
 		t.Error("EXIF still in the stored WebP")
 	}
 	thumb := e.storedBytes(m.ThumbURL)
-	if _, err := jpeg.Decode(bytes.NewReader(thumb)); err != nil {
-		t.Errorf("thumbnail is not a JPEG: %v", err)
+	if _, err := webp.Decode(bytes.NewReader(thumb), nil); err != nil {
+		t.Errorf("thumbnail is not a WebP: %v", err)
+	}
+	if !strings.HasSuffix(storedKey(m.ThumbURL), "_thumb.webp") {
+		t.Errorf("thumbnail key: %s", m.ThumbURL)
 	}
 	if got := e.getRoom("landlord-a", room.ID); got.Cover == nil || got.Cover.URL != m.URL || len(got.Media) != 1 {
 		t.Errorf("first picture becomes the cover: %+v", got.Cover)
 	}
 }
 
-func TestUploadJPEGAndPNGAreStoredAsJPEGWithoutMetadata(t *testing.T) {
+func TestUploadJPEGAndPNGAreStoredAsWebPWithoutMetadata(t *testing.T) {
 	e := newPropertyEnv(t, nil)
 	room := e.roomAPI("landlord-a", map[string]any{"name": "A1", "address_detail": "x", "price_vnd": 1})
 	m := e.addMedia(e.roomMediaPath(room.ID), jpegWithEXIF(t), "", "landlord-a")
-	if m.ContentType != "image/jpeg" || !strings.HasSuffix(storedKey(m.URL), ".jpg") {
+	if m.ContentType != "image/webp" || !strings.HasSuffix(storedKey(m.URL), ".webp") {
 		t.Fatalf("jpeg: %+v", m)
 	}
 	if b := e.storedBytes(m.URL); bytes.Contains(b, []byte("Exif")) || bytes.Contains(b, []byte("GPS-LATITUDE")) {
-		t.Error("EXIF still in the stored JPEG")
+		t.Error("EXIF still in the stored WebP")
 	}
 	p := e.addMedia(e.roomMediaPath(room.ID), pngImage(t, 40, 30, 128), "", "landlord-a")
-	if p.ContentType != "image/jpeg" || p.Width != 40 || p.DisplayOrder != 2 {
+	if p.ContentType != "image/webp" || p.Width != 40 || p.DisplayOrder != 2 {
 		t.Errorf("png with alpha is stored as JPEG: %+v", p)
 	}
-	if _, err := jpeg.Decode(bytes.NewReader(e.storedBytes(p.URL))); err != nil {
-		t.Errorf("stored PNG is not a JPEG: %v", err)
+	if _, err := webp.Decode(bytes.NewReader(e.storedBytes(p.URL)), nil); err != nil {
+		t.Errorf("stored PNG is not a WebP: %v", err)
 	}
 }
 
@@ -352,7 +356,7 @@ func TestCoverKindArrangeReplaceDelete(t *testing.T) {
 	w = e.upload(http.MethodPut, path+"/"+a.ID.String()+"/file", pngImage(t, 50, 40, 255), "", "landlord-a")
 	expectStatus(t, w, http.StatusOK)
 	r := decodeData[MediaView](t, w)
-	if r.ID != a.ID || r.URL == oldURL || r.Width != 50 || r.DisplayOrder != 1 || r.ContentType != "image/jpeg" {
+	if r.ID != a.ID || r.URL == oldURL || r.Width != 50 || r.DisplayOrder != 1 || r.ContentType != "image/webp" {
 		t.Errorf("replaced: %+v", r)
 	}
 	keys := e.files.Keys()
@@ -601,8 +605,17 @@ func TestServeMedia(t *testing.T) {
 	expectStatus(t, get("/v1/media/"+key, map[string]string{"If-None-Match": `"other"`}), http.StatusOK)
 	thumb := get("/v1/media/"+storedKey(m.ThumbURL), nil)
 	expectStatus(t, thumb, http.StatusOK)
-	if thumb.Header().Get("Content-Type") != "image/jpeg" {
+	if thumb.Header().Get("Content-Type") != "image/webp" {
 		t.Errorf("thumbnail type: %s", thumb.Header().Get("Content-Type"))
+	}
+	// Pictures stored before the switch to WebP thumbnails (".jpg" keys) are served from the key they were stored under.
+	if err := e.files.Put(context.Background(), "property/2026/11/legacy.jpg", []byte("jpeg-bytes"), "image/jpeg"); err != nil {
+		t.Fatal(err)
+	}
+	old := get("/v1/media/property/2026/11/legacy.jpg", nil)
+	expectStatus(t, old, http.StatusOK)
+	if old.Header().Get("Content-Type") != "image/jpeg" || old.Body.String() != "jpeg-bytes" {
+		t.Errorf("legacy jpg: %s %q", old.Header().Get("Content-Type"), old.Body.String())
 	}
 	// HEAD works the same.
 	req := httptest.NewRequest(http.MethodHead, "/v1/media/"+key, nil)

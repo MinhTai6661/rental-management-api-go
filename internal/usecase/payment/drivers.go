@@ -92,9 +92,9 @@ func (proofRules) Discard(ctx context.Context, files FileStore, keys []string) e
 	if len(keys) == 0 {
 		return nil
 	}
-	all := make([]string, 0, 2*len(keys))
+	all := make([]string, 0, 3*len(keys))
 	for _, k := range keys {
-		all = append(all, k, domain.ThumbKey(k))
+		all = append(all, k, domain.ThumbKey(k), domain.LegacyThumbKey(k))
 	}
 	return files.Delete(ctx, all...)
 }

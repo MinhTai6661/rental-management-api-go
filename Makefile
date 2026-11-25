@@ -1,5 +1,5 @@
 # Every Go tool runs inside Docker, so nothing has to be installed on the host.
-GO_IMAGE      ?= golang:1.26.11
+GO_IMAGE      ?= golang:1.27.4
 LINT_IMAGE    ?= golangci/golangci-lint:v2.15.0
 SQLC_IMAGE    ?= sqlc/sqlc:1.30.0
 AIR_VERSION   ?= v1.62.0
@@ -48,7 +48,7 @@ test: ## Run the unit tests
 	$(GO) test ./...
 
 vet: ## go vet
-	$(GO) vet ./...
+	$(GO) vet $(VET_FLAGS) ./...
 
 fmt: ## Format the code
 	$(GO) fmt ./...

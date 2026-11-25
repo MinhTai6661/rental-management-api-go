@@ -20,13 +20,17 @@ func NewProofKey(now time.Time, id uuid.UUID, ext string) string {
 	return fmt.Sprintf("%s%04d/%02d/%x.%s", ProofKeyPrefix, now.Year(), int(now.Month()), id[:], ext)
 }
 
-// ThumbKey is the storage key of the small copy of a proof picture, next to it.
-func ThumbKey(key string) string {
-	base := key
+// ThumbKey is the storage key of the small copy (WebP) of a proof picture, next to it.
+func ThumbKey(key string) string { return thumbBase(key) + "_thumb.webp" }
+
+// LegacyThumbKey is where the small copy of a proof stored before thumbnails became WebP is (a JPEG).
+func LegacyThumbKey(key string) string { return thumbBase(key) + "_thumb.jpg" }
+
+func thumbBase(key string) string {
 	if i := strings.LastIndexByte(key, '.'); i >= 0 {
-		base = key[:i]
+		return key[:i]
 	}
-	return base + "_thumb.jpg"
+	return key
 }
 
 var proofFilePattern = regexp.MustCompile(`^([0-9]{1,3})(_thumb)?\.webp$`)

@@ -435,7 +435,7 @@ func TestMediaKeys(t *testing.T) {
 		random[i] = byte(i)
 	}
 	file, thumb := MediaKeys(time.Date(2026, time.March, 5, 10, 0, 0, 0, time.UTC), random, "webp")
-	if file != "property/2026/03/000102030405060708090a0b0c0d0e0f.webp" || thumb != "property/2026/03/000102030405060708090a0b0c0d0e0f_thumb.jpg" {
+	if file != "property/2026/03/000102030405060708090a0b0c0d0e0f.webp" || thumb != "property/2026/03/000102030405060708090a0b0c0d0e0f_thumb.webp" {
 		t.Fatalf("got %s %s", file, thumb)
 	}
 }

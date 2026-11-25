@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"testing"
 
+	"github.com/kolesa-team/go-webp/v2/webp"
 	_ "golang.org/x/image/webp"
 )
 
@@ -111,8 +112,8 @@ func TestProcessWebPStripsMetadataAndKeepsImage(t *testing.T) {
 	if _, _, err := image.Decode(bytes.NewReader(res.Data)); err != nil {
 		t.Errorf("stripped WebP no longer decodes: %v", err)
 	}
-	if _, err := jpeg.Decode(bytes.NewReader(res.Thumb)); err != nil {
-		t.Errorf("thumb is not a JPEG: %v", err)
+	if _, err := webp.Decode(bytes.NewReader(res.Thumb), nil); err != nil {
+		t.Errorf("thumb is not a WebP: %v", err)
 	}
 }
 
@@ -126,7 +127,7 @@ func TestProcessPlainWebPPassesThrough(t *testing.T) {
 	}
 }
 
-func TestProcessJPEGIsReEncodedWithoutExif(t *testing.T) {
+func TestProcessJPEGBecomesWebPWithoutExif(t *testing.T) {
 	plain := encodeJPEG1(t, solid(40, 30, color.RGBA{200, 10, 10, 255}))
 	// Insert an APP1 Exif segment right after SOI.
 	exif := append([]byte("Exif\x00\x00"), []byte("GPS-COORDINATES")...)
@@ -141,21 +142,27 @@ func TestProcessJPEGIsReEncodedWithoutExif(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ContentType != "image/jpeg" || res.Ext != "jpg" || res.Width != 40 || res.Height != 30 {
+	if res.ContentType != "image/webp" || res.Ext != "webp" || res.Width != 40 || res.Height != 30 {
 		t.Errorf("result: %+v", res)
 	}
 	if bytes.Contains(res.Data, []byte("Exif")) || bytes.Contains(res.Data, []byte("GPS")) {
 		t.Error("Exif survived the re-encode")
 	}
+	if cfg, err := webp.DecodeConfig(bytes.NewReader(res.Data), nil); err != nil || cfg.Width != 40 || cfg.Height != 30 {
+		t.Errorf("stored picture is not a 40x30 WebP: %+v %v", cfg, err)
+	}
+	if _, err := webp.Decode(bytes.NewReader(res.Thumb), nil); err != nil {
+		t.Errorf("thumb is not a WebP: %v", err)
+	}
 }
 
-func TestProcessPNGWithAlphaBecomesJPEGOnWhite(t *testing.T) {
+func TestProcessPNGWithAlphaBecomesWebPOnWhite(t *testing.T) {
 	src := encodePNG(t, image.NewNRGBA(image.Rect(0, 0, 16, 16))) // fully transparent
 	res, err := NewProcessor(testLimits, 1).Process(context.Background(), src)
-	if err != nil || res.Ext != "jpg" {
+	if err != nil || res.Ext != "webp" {
 		t.Fatalf("%+v %v", res, err)
 	}
-	got, err := jpeg.Decode(bytes.NewReader(res.Data))
+	got, err := webp.Decode(bytes.NewReader(res.Data), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +216,7 @@ func TestThumbnailSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := jpeg.DecodeConfig(bytes.NewReader(res.Thumb))
+	cfg, err := webp.DecodeConfig(bytes.NewReader(res.Thumb), nil)
 	if err != nil || cfg.Width != 480 || cfg.Height != 240 {
 		t.Errorf("thumb %dx%d (%v), want 480x240", cfg.Width, cfg.Height, err)
 	}
@@ -218,7 +225,7 @@ func TestThumbnailSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ = jpeg.DecodeConfig(bytes.NewReader(small.Thumb))
+	cfg, _ = webp.DecodeConfig(bytes.NewReader(small.Thumb), nil)
 	if cfg.Width != 30 || cfg.Height != 20 {
 		t.Errorf("small thumb %dx%d", cfg.Width, cfg.Height)
 	}
@@ -253,5 +260,21 @@ func TestStripWebPMetadataRejectsMalformed(t *testing.T) {
 		if _, err := StripWebPMetadata(data); !errors.Is(err, ErrCorrupt) {
 			t.Errorf("%s: err %v, want ErrCorrupt", name, err)
 		}
+	}
+}
+
+// A stored picture from before the switch (JPEG key) is not touched by this package; processing a legacy JPEG
+// upload still yields a WebP whose thumbnail is smaller than the original's long side limit.
+func TestProcessPNGThumbIsWebPWithinLimit(t *testing.T) {
+	res, err := NewProcessor(testLimits, 1).Process(context.Background(), encodePNG(t, solid(900, 300, color.RGBA{10, 120, 30, 255})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := webp.DecodeConfig(bytes.NewReader(res.Thumb), nil)
+	if err != nil || cfg.Width != 480 || cfg.Height != 160 {
+		t.Errorf("thumb %+v %v", cfg, err)
+	}
+	if !bytes.HasPrefix(res.Thumb, []byte("RIFF")) || string(res.Thumb[8:12]) != "WEBP" {
+		t.Error("thumb is not a RIFF/WEBP file")
 	}
 }

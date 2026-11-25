@@ -16,8 +16,11 @@ func TestProofKeysArePrivateAndValid(t *testing.T) {
 	if strings.ContainsAny(key, "-ABCDEF") {
 		t.Errorf("a key is lowercase hex without dashes: %s", key)
 	}
-	if got := ThumbKey(key); !strings.HasSuffix(got, "_thumb.jpg") || strings.TrimSuffix(got, "_thumb.jpg") != strings.TrimSuffix(key, ".webp") {
+	if got := ThumbKey(key); !strings.HasSuffix(got, "_thumb.webp") || strings.TrimSuffix(got, "_thumb.webp") != strings.TrimSuffix(key, ".webp") {
 		t.Errorf("thumb key: %s", got)
+	}
+	if got := LegacyThumbKey(key); !strings.HasSuffix(got, "_thumb.jpg") || strings.TrimSuffix(got, "_thumb.jpg") != strings.TrimSuffix(key, ".webp") {
+		t.Errorf("legacy thumb key: %s", got)
 	}
 }
 

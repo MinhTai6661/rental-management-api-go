@@ -181,7 +181,7 @@ type ProcessedImage struct {
 	Ext         string // "webp" or "jpg"
 	Width       int
 	Height      int
-	Thumb       []byte // JPEG
+	Thumb       []byte // WebP
 }
 
 // FileInfo describes a stored file.
