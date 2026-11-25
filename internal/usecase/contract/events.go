@@ -14,6 +14,11 @@ const (
 	// NotifyInvitationAccepted and NotifyInvitationDeclined tell the landlord how the person answered.
 	NotifyInvitationAccepted = "contract_invitation_accepted"
 	NotifyInvitationDeclined = "contract_invitation_declined"
+	// NotifyInvitationNeedsApproval tells the landlord that a manager wrote an offer waiting for their answer;
+	// NotifyInvitationApproved and NotifyInvitationRejected tell the manager the answer.
+	NotifyInvitationNeedsApproval = "contract_invitation_needs_approval"
+	NotifyInvitationApproved      = "contract_invitation_approved"
+	NotifyInvitationRejected      = "contract_invitation_rejected"
 )
 
 // The audit actions the contract use cases record.
@@ -33,6 +38,8 @@ const (
 	AuditInvitationRevoked     = "contract_invitation.revoked"
 	AuditInvitationAccepted    = "contract_invitation.accepted"
 	AuditInvitationDeclined    = "contract_invitation.declined"
+	AuditInvitationApproved    = "contract_invitation.approved"
+	AuditInvitationRejected    = "contract_invitation.rejected"
 )
 
 // The audiences of a notification: which side of the contract it is for.

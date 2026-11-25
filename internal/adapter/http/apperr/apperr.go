@@ -84,6 +84,7 @@ const (
 	CodeInvitationNotPending      = "invitation.not_pending"
 	CodeInvitationLinkUnavailable = "invitation.link_unavailable"
 	CodeInvitationOwnOffer        = "invitation.own_offer"
+	CodeInvitationNotAwaiting     = "invitation.not_awaiting_approval"
 	CodeServerInternal            = "server.internal"
 	RuleRequired                  = "required"
 	RuleEmail                     = "email"
@@ -139,6 +140,12 @@ const (
 	RuleRecipientMismatch = "recipient_mismatch"
 	RuleRequiredWithout   = "required_without"
 	RuleLinkInvalid       = "link_invalid"
+	RuleCannotManage      = "cannot_manage"
+	RuleRoomsChanged      = "rooms_changed"
+	RuleRoomNotOwned      = "room_not_owned"
+	RuleRoomsManaged      = "rooms_managed"
+	RuleRoomsPending      = "rooms_pending"
+	RuleReplaceNotListed  = "replace_not_listed"
 
 	RuleAmountExceedsRemaining = "amount_exceeds_remaining"
 	RuleMethodNotAccepted      = "method_not_accepted"
@@ -189,7 +196,7 @@ func Codes() []string {
 		CodePlanAlreadyOn, CodePlanNotPending, CodeContractNotListed, CodeListingTransition, CodeListingRoomListed,
 		CodeListingUnpublish, CodeListingLimit, CodeInvoiceNotRunning, CodeInvoiceAlreadyPaid, CodeInvoiceSendFirst,
 		CodeInvoiceLocked, CodeInvoiceReviewPending, CodeInvoiceLinkNeedsSent, CodeInvoiceLinkInvalid,
-		CodeInvitationInvalid, CodeInvitationNotPending, CodeInvitationLinkUnavailable, CodeInvitationOwnOffer,
+		CodeInvitationInvalid, CodeInvitationNotPending, CodeInvitationLinkUnavailable, CodeInvitationOwnOffer, CodeInvitationNotAwaiting,
 		CodePaymentNotPayable, CodePaymentReviewed, CodeAnnouncementRecalled, CodeAnnouncementImageMax,
 	}
 }
@@ -206,6 +213,7 @@ func Rules() []string {
 		RuleUnknownService, RulePreviousReadingRequired, RuleReadingLowerThanPrev, RuleNewReadingRequired, RuleNothingToBill,
 		RuleDayNeedsEnd, RuleInvalidPeriod, RulePeriodBilled, RulePaymentLabelChars,
 		RuleRecipientInvalid, RuleOwnEmail, RuleRecipientMismatch, RuleRequiredWithout, RuleLinkInvalid,
+		RuleCannotManage, RuleRoomsChanged, RuleRoomNotOwned, RuleRoomsManaged, RuleRoomsPending, RuleReplaceNotListed,
 		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
 		RuleTitleBodyPair, RuleOneLanguage, RuleNowhereToGo, RuleCTAIncomplete, RuleURLUnsafe, RuleNoPeople, RuleAudienceEmpty,
 		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays,

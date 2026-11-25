@@ -26,14 +26,15 @@ func userIDOf(c *gin.Context) (uuid.UUID, bool) {
 	return uuid.Nil, false
 }
 
-// viewerOf is the caller as a viewer of bills: a landlord sees the bills of their contracts, a tenant the ones sent to them.
+// viewerOf is the caller as a viewer of bills by the role of the request: a landlord sees the bills of their contracts,
+// a manager those of the rooms handed to them, a tenant the ones sent to them.
 func viewerOf(c *gin.Context) (domain.Viewer, bool) {
 	id, ok := userIDOf(c)
 	if !ok {
 		return domain.Viewer{}, false
 	}
 	p, _ := httpx.PrincipalOf(c)
-	return domain.Viewer{UserID: id, AsLandlord: p.HasRole(authz.RoleLandlord)}, true
+	return domain.Viewer{UserID: id, AsLandlord: p.Role == authz.RoleLandlord, AsManager: p.Role == authz.RoleManager}, true
 }
 
 // landlordAndID reads the caller and the id in the path.
@@ -91,4 +92,10 @@ func loadMore(c *gin.Context, max int) (limit, offset int, err error) {
 		return 0, 0, apperr.Invalid(fields...)
 	}
 	return limit, offset, nil
+}
+
+// writerViewer is the caller as the viewer of the bill they just wrote or changed (a landlord, or a manager acting).
+func writerViewer(c *gin.Context, id uuid.UUID) domain.Viewer {
+	p, _ := httpx.PrincipalOf(c)
+	return domain.Viewer{UserID: id, AsLandlord: p.Role != authz.RoleManager, AsManager: p.Role == authz.RoleManager}
 }

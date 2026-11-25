@@ -36,7 +36,6 @@
   "errors.plan.inactive": "This plan is no longer offered.",
   "errors.plan.already_on_plan": "You are already on this plan.",
   "errors.plan.subscription_not_pending": "Only a pending subscription can be activated.",
-
   "validation.required": "The {{.attribute}} field is required.",
   "validation.email": "The {{.attribute}} field must be a valid email address.",
   "validation.min_string": "The {{.attribute}} field must be at least {{.min}} characters.",
@@ -75,7 +74,6 @@
   "validation.below_minimum_days": "This room is rented for at least {{.amount}} day(s): the contract cannot end before {{.date}}.",
   "validation.format": "The {{.attribute}} field format is invalid: use lower case letters, digits and underscores.",
   "validation.datetime": "The {{.attribute}} field must be a date and time such as 2026-12-31T00:00:00+07:00.",
-
   "validation.attributes.full_name": "full name",
   "validation.attributes.email": "email",
   "validation.attributes.password": "password",
@@ -254,5 +252,18 @@
   "validation.richtext_link": "The {{.attribute}} field has a link that is not allowed (use http, https or mailto).",
   "validation.richtext_too_large": "The {{.attribute}} field is too large or nested too deeply.",
   "validation.richtext_no_heading": "The {{.attribute}} field needs at least one section heading (level 2).",
-  "validation.richtext_empty": "The {{.attribute}} field has no text."
+  "validation.richtext_empty": "The {{.attribute}} field has no text.",
+  "errors.invitation.not_awaiting_approval": "This offer is not waiting for your approval.",
+  "validation.cannot_manage": "This account cannot manage rooms for this landlord.",
+  "validation.rooms_changed": "The rooms of this invitation changed: ask the landlord for a new one.",
+  "validation.room_not_owned": "One of the rooms is not yours.",
+  "validation.rooms_managed": "These rooms already have a manager: {{.rooms}}.",
+  "validation.rooms_pending": "These rooms are in an invitation still waiting for an answer: {{.rooms}}.",
+  "validation.replace_not_listed": "The rooms to replace must be among the rooms of the invitation.",
+  "validation.attributes.room_ids": "rooms",
+  "validation.attributes.replace_room_ids": "rooms to replace",
+  "validation.attributes.capabilities": "capabilities",
+  "validation.attributes.grant": "capabilities to give",
+  "validation.attributes.revoke": "capabilities to take",
+  "validation.attributes.notify_landlord": "notify the landlord"
 }

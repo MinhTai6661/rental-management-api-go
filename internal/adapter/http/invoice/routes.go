@@ -16,8 +16,9 @@ import (
 func MountInvoices(v1 *gin.RouterGroup, h *InvoiceHandler, m *MeterHandler, p *PublicHandler, auth httpx.Authenticator, limiter httpx.Limiter) {
 	can := httpx.RequirePermission
 	signedIn := httpx.RequireAuth(auth)
-	both := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleTenant))
-	landlord := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord))
+	both := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleManager, authz.RoleTenant))
+	// A manager works on the bills of the rooms handed to them (the use cases scope every query and check the rights).
+	landlord := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleManager))
 
 	// A landlord sees every bill of their contracts, a tenant what was sent to their account.
 	both.GET("/contracts/:id/invoices", can("invoices.view"), h.List)

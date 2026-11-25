@@ -41,7 +41,7 @@ func (r *ContractReader) byID(ctx context.Context, p sqlcgen.SearchContractFacts
 
 // Get returns the contract as the viewer sees it, or shared.ErrNotFound.
 func (r *ContractReader) Get(ctx context.Context, v domain.Viewer, id uuid.UUID) (domain.ContractFacts, error) {
-	return r.byID(ctx, sqlcgen.SearchContractFactsForBillingParams{Scoped: true, AsLandlord: v.AsLandlord, ViewerID: v.UserID, ID: &id})
+	return r.byID(ctx, sqlcgen.SearchContractFactsForBillingParams{Scoped: true, AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, ID: &id})
 }
 
 // Lock returns a contract and locks it until the transaction ends.

@@ -299,5 +299,8 @@ func (c Contract) AbilitiesFor(v Viewer) Abilities {
 	if v.AsLandlord {
 		return Abilities{Review: c.Status == StatusPending, Update: true, Delete: true}
 	}
+	if v.AsManager {
+		return Abilities{} // a manager only reads contracts
+	}
 	return Abilities{Delete: c.CanTenantDelete(v.UserID)}
 }

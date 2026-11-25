@@ -36,7 +36,6 @@
   "errors.plan.inactive": "Gói này không còn được cung cấp.",
   "errors.plan.already_on_plan": "Bạn đang dùng gói này rồi.",
   "errors.plan.subscription_not_pending": "Chỉ kích hoạt được yêu cầu đang chờ.",
-
   "validation.required": "Trường {{.attribute}} là bắt buộc.",
   "validation.email": "Trường {{.attribute}} phải là email hợp lệ.",
   "validation.min_string": "Trường {{.attribute}} phải có ít nhất {{.min}} ký tự.",
@@ -75,7 +74,6 @@
   "validation.below_minimum_days": "Phòng này thuê tối thiểu {{.amount}} ngày: hợp đồng không thể kết thúc trước ngày {{.date}}.",
   "validation.format": "Trường {{.attribute}} sai định dạng: chỉ dùng chữ thường, chữ số và dấu gạch dưới.",
   "validation.datetime": "Trường {{.attribute}} phải là ngày giờ dạng 2026-12-31T00:00:00+07:00.",
-
   "validation.attributes.full_name": "họ tên",
   "validation.attributes.email": "email",
   "validation.attributes.password": "mật khẩu",
@@ -254,5 +252,18 @@
   "validation.richtext_link": "Trường {{.attribute}} có liên kết không được phép (chỉ http, https hoặc mailto).",
   "validation.richtext_too_large": "Trường {{.attribute}} quá dài hoặc lồng quá sâu.",
   "validation.richtext_no_heading": "Trường {{.attribute}} cần ít nhất một tiêu đề mục (cấp 2).",
-  "validation.richtext_empty": "Trường {{.attribute}} chưa có chữ nào."
+  "validation.richtext_empty": "Trường {{.attribute}} chưa có chữ nào.",
+  "errors.invitation.not_awaiting_approval": "Lời mời này không còn chờ bạn duyệt.",
+  "validation.cannot_manage": "Tài khoản này không thể quản lý phòng cho chủ trọ này.",
+  "validation.rooms_changed": "Các phòng trong lời mời đã thay đổi: hãy xin chủ trọ lời mời mới.",
+  "validation.room_not_owned": "Một trong các phòng không thuộc về bạn.",
+  "validation.rooms_managed": "Các phòng này đã có người quản lý: {{.rooms}}.",
+  "validation.rooms_pending": "Các phòng này đang nằm trong lời mời chưa được trả lời: {{.rooms}}.",
+  "validation.replace_not_listed": "Phòng cần thay thế phải nằm trong danh sách phòng của lời mời.",
+  "validation.attributes.room_ids": "phòng",
+  "validation.attributes.replace_room_ids": "phòng cần thay thế",
+  "validation.attributes.capabilities": "quyền",
+  "validation.attributes.grant": "quyền cấp thêm",
+  "validation.attributes.revoke": "quyền thu hồi",
+  "validation.attributes.notify_landlord": "báo cho chủ trọ"
 }

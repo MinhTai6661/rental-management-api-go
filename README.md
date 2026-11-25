@@ -14,7 +14,7 @@ Stack: [Gin](https://gin-gonic.com) (HTTP) - [pgx](https://github.com/jackc/pgx)
 [goose](https://github.com/pressly/goose) (Postgres 18) - go-redis (revoked tokens) +
 [redis_rate](https://github.com/go-redis/redis_rate) (rate limits) - [go-mail](https://github.com/wneessen/go-mail)
 (SMTP) - [go-i18n](https://github.com/nicksnyder/go-i18n) + `x/text/language` (vi/en messages, Accept-Language) -
-`log/slog` - argon2id + JWT (golang-jwt) - testcontainers (integration tests). Go 1.26.
+`log/slog` - argon2id + JWT (golang-jwt) - testcontainers (integration tests). Go 1.27.
 
 ## Quick start
 
@@ -439,8 +439,8 @@ What the server accepts is checked from the bytes (never the client's content ty
 most `MEDIA_MAX_UPLOAD_BYTES` (2 MiB) and `MEDIA_MAX_DIMENSION` (2048) pixels on the longest side, checked from the image
 header before any pixel is decoded (decompression bombs); animated WebP is refused. Refusals are a 422 on `file`:
 `image_type`, `image_dimensions`, `image_corrupt`, `file_too_large` (a body far over the limit is 413). WebP is stored as
-uploaded with EXIF/XMP removed; JPEG and PNG are re-encoded as JPEG (metadata dropped, alpha on white). Every picture has
-a 480 px JPEG thumbnail made at upload time.
+uploaded with EXIF/XMP removed; JPEG and PNG are re-encoded as lossy WebP (pure-Go encoder, metadata dropped, alpha on white). Every picture has
+a 480 px WebP thumbnail (`_thumb.webp`) made at upload time.
 
 Files are written to storage before the database transaction and deleted again if it fails; files that are no longer
 referenced (a deleted or replaced picture, a deleted building) are removed after the commit. The cover (`cover` kind, else
@@ -739,8 +739,8 @@ wrong role is a 403. Every list is paged (`page`, `per_page` <= 100, `meta {page
 - **Secrets**: the settings of a method (the account number) are stored **encrypted** with `DATA_ENCRYPTION_KEY` and never
   logged; the audit trail would hold only masked numbers (last four characters). A saved method that cannot be decrypted
   (the key changed) shows as never saved.
-- **Proofs** are private files under `payments/YYYY/MM/<32 hex>` in the media store (`.webp` when the client sent WebP, `.jpg`
-  otherwise, with a `_thumb.jpg` copy), written **before** the transaction and removed if it fails or the payment is withdrawn.
+- **Proofs** are private files under `payments/YYYY/MM/<32 hex>` in the media store (always `.webp` now, with a `_thumb.webp` copy;
+  older proofs may be `.jpg` / `_thumb.jpg`, still served), written **before** the transaction and removed if it fails or the payment is withdrawn.
   The public `GET /v1/media/*key` route serves only `property/` and `announcements/` keys, so a proof is reachable only through its signed link
   (HMAC-SHA256 over payment, file and expiry, key derived from `DATA_ENCRYPTION_KEY`, valid `PAYMENT_PROOF_URL_TTL_MINUTES`);
   only the two sides of a payment are given links. The bytes are served as stored, whatever the `.webp` in the name says.
@@ -999,6 +999,30 @@ Rules: [`docs/go-business-rules.md`](docs/go-business-rules.md) section 1 and th
 
 The version people must accept is the newest legal document of any kind (`TERMS_VERSION` until one is published); `GET /v1/auth/me`
 (`terms.current_version`, `needs_acceptance`) and registration use it through `identity.TermsVersions`, and staff are never asked.
+
+### Managers (rooms handed to a manager)
+
+A landlord hands rooms to a person who does the billing for them. The invitation is a link (as contract invitations): `domain/manager`,
+`usecase/manager`, `adapter/http/manager`, `adapter/persistence/postgres/manager`, migration `00015`, linter rule
+`manager-does-not-know-other-contexts` (it reuses only the shared kernel `domain/invitation`). A hand-over (`room_managers`) exists only after
+the person accepted; a room has one active manager (partial unique index); capabilities (`payments.review`, `contracts.review_registrations`,
+`contracts.propose`, `contracts.create`; `create` needs `propose`) are data per room, not permissions.
+
+| Route | Who | Notes |
+|---|---|---|
+| `GET /v1/manager-capabilities` | landlord, `managers.manage` | the catalogue |
+| `GET\|POST /v1/my/manager-invitations`, `GET .../{id}/link`, `POST .../{id}/regenerate`, `DELETE .../{id}` | landlord, `managers.manage` | `POST` 30/hour; link 60/min; 422 `room_ids` names rooms that already have a manager or wait in another invitation (`replace_room_ids` takes them over) |
+| `POST /v1/manager-invitations/preview\|accept\|decline` `{token \| invitation_id}`, `GET /v1/me/manager-invitations` | tenant role, `manager_invitations.respond` | 20/min; every unusable link is the same 422 `token`; accept gives the role `manager`, all rooms or none |
+| `GET /v1/my/room-managers` (`view=groups`, `manager_id`), `PUT\|DELETE .../{id}`, `POST .../bulk {revoke\|update}` | landlord | taking back the last room removes the role |
+| `GET /v1/my/managed-rooms` (`view=groups`, `landlord_id`) | manager role | read only |
+| `POST /v1/contract-invitations/{id}/approve\|reject` | landlord | offers a manager wrote wait for the landlord unless the manager holds `contracts.create` |
+
+What a hand-over allows counts **only for a request made in the manager role** (`reqctx` role, bridged in `bridges_manager.go`): a manager
+reads the contracts of their rooms (`viewer.AsManager` in the contract and invoice scopes), writes, corrects, sends and previews bills, deletes a
+draft they wrote, and writes contract offers per capability. Marking bills paid / `already_paid` needs `payments.review` (403 otherwise). A manager
+never sees or touches the contract, bills or payments of a contract they hold as tenant (404). The landlord is told (`manager_bill_sent|edited`) when the
+hand-over asks for it; the audit entries carry `actor_role=manager` and the landlord as owner. A manager who loses every room has the offers they
+wrote that still wait withdrawn.
 
 ### Audit trail
 
@@ -1290,6 +1314,7 @@ Done: phase 8, `payment` (schema; the landlord's payment methods with encrypted 
 pictures, confirm, reject, withdraw, the landlord's list, recorded payments, payment instructions with VietQR/MoMo links, signed
 proof links, the real payment ledger for invoices, the billing summary and payment filters on the contract lists, demo seed).
 
+Done: phase 12, `manager` (migration `00015`; invitations by link, answers, hand-overs with capabilities, managed rooms, offers written by managers with the landlord's approval; the manager scope of contracts and bills). Not done: see Known gaps.
 Done: phase 10, `admin` (migration `00013`; user list/delete/bulk delete, roles and who may give what, landlord applications with
 approve/reject/bulk, the landlord profile and impact/revoke, the settings overrides, the insert-only legal documents with the white-listed
 rich text and `change_summary`, acceptance of the terms, the export, the erasure check and the erasure of an account). Emails of the
@@ -1348,9 +1373,11 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
 
+- **Manager**: the manager's rights are wired into contract reads, bills and contract offers only. **Not yet**: payments (`payments.review` to confirm/reject a payment, record money received, and the manager's view of payments), `contracts.review_registrations` (approve/reject registrations, bulk, and the notice of a new registration), the manager's `abilities` on the contract JSON, the `payment_methods` 403 test, and the manager mail has only a Vietnamese template. The room history routes stay for the landlord.
+
 - **Audit trail**: not recorded yet, because the context or the flow does not exist or has no audit port: rooms and buildings (`room.*`,
   `building.*`: the property use cases have no audit port; the room's history today holds only listing, contract, invoice and payment entries),
-  reports, managers (`manager.*`), social login and password reset (`auth.oauth_*`, `auth.password_reset*`), the profile and avatar
+  reports, social login and password reset (`auth.oauth_*`, `auth.password_reset*`), the profile and avatar
   (`user.profile_updated|avatar_changed`), the invitations preference and the opt-out link (`user.invitations_preference_changed`,
   `invitation.opted_out`), the contract-invitation approve/reject of a manager. The action catalog already holds those names. The actions have
   no translated labels in the API (the web labels them by `action`). The history routes are for the owning landlord only (a manager the
@@ -1385,10 +1412,11 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 - **Pictures in S3**: the driver is tested against a fake S3 (and SeaweedFS by hand); R2 and AWS S3 themselves are
   untested. Pictures are served by the API proxy unless `MEDIA_PUBLIC_BASE_URL` points at a public bucket domain;
   a failed upload after a database rollback leaves an orphan object, as with local files (no sweeper yet).
-- **Pictures (property phase, platform part)**: Go has no WebP encoder and we take no cgo/WASM one, so a JPEG or PNG
-  upload is stored as JPEG (metadata removed), while WebP (what the web sends) is stored as uploaded with its EXIF and
-  XMP chunks removed. The EXIF orientation of a directly uploaded JPEG is not applied (the web always sends an upright
-  WebP). Thumbnails are JPEG, made at upload time without a queue.
+- **Pictures (property phase, platform part)**: everything new is stored as WebP: a JPEG or PNG upload is re-encoded with the
+  pure-Go `go-webp` encoder (metadata removed), WebP (what the web sends) is stored as uploaded with its EXIF and XMP chunks
+  removed, thumbnails are WebP (`_thumb.webp`) made at upload time without a queue. Rows written before keep their `.jpg` /
+  `_thumb.jpg` keys, which are served from the stored key (content type from the extension). The EXIF orientation of a
+  directly uploaded JPEG is not applied (the web always sends an upright WebP).
 
 - **Contracts**: the `Notifier` is the inbox's (see [Notifications](#notifications-the-inbox)); the `AuditRecorder` port is a no-op default (nothing is
   stored); the use cases call them where Laravel does and the unit tests check the calls, so the audit phase
@@ -1421,8 +1449,7 @@ as each Go module lands; the Laravel API keeps serving the web until then.
   manager access (a manager with `payments.review`), and the audit and `PaymentMailer` ports are no-ops
   (the use cases call them where Laravel does and the unit tests check the calls): payments and their decisions reach the inbox,
   but nothing is stored in an audit trail and no email goes out. A bill passed on by link has no payer account, so only the landlord
-  can record money on it. Go has no WebP encoder, so a proof sent as PNG/JPEG is stored as JPEG (WebP as sent) even though its
-  link ends in `.webp`; thumbnails are made at upload (Laravel's `payments:generate-proof-thumbnails` has nothing to do).
+  can record money on it. a proof sent as PNG/JPEG is re-encoded to WebP (WebP as sent), so new proofs are always `.webp`; thumbnails are made at upload (Laravel's `payments:generate-proof-thumbnails` has nothing to do).
   The files of a deleted bill or a withdrawn payment are removed best effort (a failure is logged, an unreferenced private file
   is left); a proof written before a transaction that then rolls back is removed again, but a crash between the two leaves an
   orphan (no sweeper). A ledger built for the daily invoice commands has no file store (they never delete bills). The

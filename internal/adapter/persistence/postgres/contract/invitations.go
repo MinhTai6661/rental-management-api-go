@@ -36,7 +36,7 @@ func (r *InvitationRepository) Insert(ctx context.Context, inv domain.Invitation
 // Get returns one of the landlord's invitations, or shared.ErrNotFound.
 func (r *InvitationRepository) Get(ctx context.Context, landlordID, id uuid.UUID) (domain.InvitationDetail, error) {
 	rows, err := postgres.Queries(ctx, r.pool).SearchContractInvitations(ctx, sqlcgen.SearchContractInvitationsParams{
-		LandlordID: landlordID, ID: &id, PageLimit: 1,
+		LandlordID: &landlordID, ID: &id, PageLimit: 1,
 	})
 	if err != nil {
 		return domain.InvitationDetail{}, postgres.Translate(err)
@@ -56,12 +56,12 @@ func (r *InvitationRepository) List(ctx context.Context, landlordID uuid.UUID, s
 		st = &s
 	}
 	rows, err := q.SearchContractInvitations(ctx, sqlcgen.SearchContractInvitationsParams{
-		LandlordID: landlordID, Status: st, PageLimit: int32(limit), PageOffset: int32(offset), //nolint:gosec // bounded by httpx.ParsePage
+		LandlordID: &landlordID, Status: st, PageLimit: int32(limit), PageOffset: int32(offset), //nolint:gosec // bounded by httpx.ParsePage
 	})
 	if err != nil {
 		return nil, 0, postgres.Translate(err)
 	}
-	total, err := q.CountContractInvitations(ctx, sqlcgen.CountContractInvitationsParams{LandlordID: landlordID, Status: st})
+	total, err := q.CountContractInvitations(ctx, sqlcgen.CountContractInvitationsParams{LandlordID: &landlordID, Status: st})
 	if err != nil {
 		return nil, 0, postgres.Translate(err)
 	}
@@ -86,6 +86,7 @@ func (r *InvitationRepository) Save(ctx context.Context, inv domain.Invitation) 
 	return postgres.Translate(postgres.Queries(ctx, r.pool).SaveContractInvitation(ctx, sqlcgen.SaveContractInvitationParams{
 		ID: inv.ID, Status: string(inv.Status), TokenHash: inv.TokenHash, LinkTokenSealed: inv.Sealed, ExpiresAt: inv.ExpiresAt,
 		AnsweredByID: inv.AnsweredByID, AnsweredAt: inv.AnsweredAt, ContractID: inv.ContractID,
+		ApprovedByID: inv.ApprovedByID, ApprovedAt: inv.ApprovedAt, ApprovalNote: inv.ApprovalNote,
 	}))
 }
 
@@ -142,6 +143,60 @@ func (r *InvitationRepository) Inbox(ctx context.Context, recipientID uuid.UUID,
 func (r *InvitationRepository) RevokeOpenOfRooms(ctx context.Context, roomIDs []uuid.UUID, at time.Time) ([]domain.Invitation, error) {
 	rows, err := postgres.Queries(ctx, r.pool).RevokeOpenContractInvitationsOfRooms(ctx, sqlcgen.RevokeOpenContractInvitationsOfRoomsParams{
 		RoomIds: roomIDs, At: &at,
+	})
+	if err != nil {
+		return nil, postgres.Translate(err)
+	}
+	out := make([]domain.Invitation, len(rows))
+	for i, row := range rows {
+		out[i] = invitationOf(row)
+	}
+	return out, nil
+}
+
+// GetAuthored returns an offer the manager wrote, while they still manage its room, or shared.ErrNotFound.
+func (r *InvitationRepository) GetAuthored(ctx context.Context, authorID, id uuid.UUID) (domain.InvitationDetail, error) {
+	rows, err := postgres.Queries(ctx, r.pool).SearchContractInvitations(ctx, sqlcgen.SearchContractInvitationsParams{
+		AuthorID: &authorID, ID: &id, PageLimit: 1,
+	})
+	if err != nil {
+		return domain.InvitationDetail{}, postgres.Translate(err)
+	}
+	if len(rows) == 0 {
+		return domain.InvitationDetail{}, shared.ErrNotFound
+	}
+	return invitationDetailOf(rows[0]), nil
+}
+
+// ListAuthored returns a page of the offers the manager wrote (open ones first) and how many match in all.
+func (r *InvitationRepository) ListAuthored(ctx context.Context, authorID uuid.UUID, status *domain.InvitationStatus, limit, offset int) ([]domain.InvitationDetail, int, error) {
+	q := postgres.Queries(ctx, r.pool)
+	var st *string
+	if status != nil {
+		s := string(*status)
+		st = &s
+	}
+	rows, err := q.SearchContractInvitations(ctx, sqlcgen.SearchContractInvitationsParams{
+		AuthorID: &authorID, Status: st, PageLimit: int32(limit), PageOffset: int32(offset), //nolint:gosec // bounded by httpx.ParsePage
+	})
+	if err != nil {
+		return nil, 0, postgres.Translate(err)
+	}
+	total, err := q.CountContractInvitations(ctx, sqlcgen.CountContractInvitationsParams{AuthorID: &authorID, Status: st})
+	if err != nil {
+		return nil, 0, postgres.Translate(err)
+	}
+	out := make([]domain.InvitationDetail, len(rows))
+	for i, row := range rows {
+		out[i] = invitationDetailOf(row)
+	}
+	return out, int(total), nil
+}
+
+// RevokeAwaitingOfAuthor withdraws the offers the manager wrote that still wait for the landlord and returns them.
+func (r *InvitationRepository) RevokeAwaitingOfAuthor(ctx context.Context, authorID uuid.UUID, at time.Time) ([]domain.Invitation, error) {
+	rows, err := postgres.Queries(ctx, r.pool).RevokeAwaitingContractInvitationsOfAuthor(ctx, sqlcgen.RevokeAwaitingContractInvitationsOfAuthorParams{
+		AuthorID: &authorID, At: &at,
 	})
 	if err != nil {
 		return nil, postgres.Translate(err)

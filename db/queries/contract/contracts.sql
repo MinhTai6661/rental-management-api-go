@@ -46,7 +46,9 @@ LEFT JOIN LATERAL (
 ) b ON true
 WHERE c.deleted_at IS NULL
   AND ((@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id))
   AND (sqlc.narg('id')::uuid IS NULL OR c.id = sqlc.narg('id')::uuid)
   AND (sqlc.narg('statuses')::text[] IS NULL OR c.status = ANY(sqlc.narg('statuses')::text[]))
   AND (sqlc.narg('room_id')::uuid IS NULL OR c.room_id = sqlc.narg('room_id')::uuid)
@@ -85,7 +87,9 @@ JOIN rooms r ON r.id = c.room_id
 LEFT JOIN users t ON t.id = c.tenant_id
 WHERE c.deleted_at IS NULL
   AND ((@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id))
   AND (sqlc.narg('statuses')::text[] IS NULL OR c.status = ANY(sqlc.narg('statuses')::text[]))
   AND (sqlc.narg('room_id')::uuid IS NULL OR c.room_id = sqlc.narg('room_id')::uuid)
   AND (sqlc.narg('building_id')::uuid IS NULL OR r.building_id = sqlc.narg('building_id')::uuid)

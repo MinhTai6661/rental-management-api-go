@@ -7,7 +7,7 @@ Frontend Nuxt nằm ở `../rental-management-web`. **README.md là tài liệu 
 Trả lời người dùng bằng **tiếng Việt**; comment trong code bằng **tiếng Anh**, ngắn gọn.
 
 ## Stack
-Go 1.26, Gin, pgx + sqlc + goose (Postgres), Redis (rate limit, thu hồi token), golang-jwt, argon2id, go-mail, go-i18n (vi/en),
+Go 1.27, Gin, pgx + sqlc + goose (Postgres), Redis (rate limit, thu hồi token), golang-jwt, argon2id, go-mail, go-i18n (vi/en),
 testcontainers-go. Dev: API cổng 8090, Postgres 5442, Redis 6389, Mailpit UI 8026 (`make up`).
 
 ## Kiến trúc: Clean Architecture
@@ -33,6 +33,7 @@ Quyền mới vào `internal/domain/identity/catalog.go` rồi `make seed`. Thê
 - Mỗi tập giá trị cố định (trạng thái…) là một kiểu chuỗi có hàm `Parse` trong domain; ràng buộc CHECK trong DB giữ làm lớp bảo vệ cuối.
 - Link bí mật (lời mời, hóa đơn) chỉ lưu hash; bản có thể sao chép lại được mã hóa bằng `pkg/secretbox` (cần `DATA_ENCRYPTION_KEY`).
 - Context `admin` (người dùng, vai trò, đơn chủ trọ, cài đặt, điều khoản, quyền chủ thể dữ liệu) làm việc trên bảng của identity bằng query riêng và không import context khác; phiên bản điều khoản hiện hành = bản đăng mới nhất của `legal_documents` (identity lấy qua `TermsVersions`). Audit (`audit`): hai bảng `audit_logs`/`audit_activity` chia phân vùng theo tháng, mọi context ghi qua port audit riêng được nối vào một `Recorder` (`bridges_audit.go`); actor/role/ip lấy từ `pkg/reqctx` (middleware httpx); thêm action mới = thêm hằng vào `internal/domain/audit/action.go`.
+- Context `manager` (giao phòng cho quản lý hộ): lời mời bằng link như lời mời thuê, quyền theo phòng là dữ liệu (`room_managers` + capability), chỉ có hiệu lực khi request ở role `manager` (`actingAsManager` trong `bridges_manager.go`); các context khác thấy manager qua `Viewer.AsManager` + port nhỏ (invoice `Acting/Managers`, contract `Managers`). Chưa nối vào payment và duyệt đăng ký (xem README Known gaps).
 - Các lệnh định kỳ (`subscriptions-expire`, `invoices-send-automatic`, `invoices-send-reminders`, `notifications-prune`, `announcements-dispatch-due`, `audit-maintain`) do `rental-management worker` chạy (`make worker`, khóa Redis để nhiều bản không chạy trùng); vẫn gọi tay hoặc bằng cron được.
 
 ## Lệnh

@@ -424,6 +424,8 @@ type fakeInvitations struct {
 	store *fakeStore
 	rows  map[uuid.UUID]*domain.Invitation
 	order []uuid.UUID
+	// lost lists the managers who no longer manage the room of what they wrote (their own offers are then hidden).
+	lost map[uuid.UUID]bool
 }
 
 func newFakeInvitations(store *fakeStore) *fakeInvitations {
@@ -467,6 +469,40 @@ func (f *fakeInvitations) List(_ context.Context, landlordID uuid.UUID, status *
 		out = out[offset:min(len(out), offset+limit)]
 	}
 	return out, total, nil
+}
+
+func (f *fakeInvitations) GetAuthored(_ context.Context, authorID, id uuid.UUID) (domain.InvitationDetail, error) {
+	inv, ok := f.rows[id]
+	if !ok || inv.CreatedByID == nil || *inv.CreatedByID != authorID || f.lost[authorID] {
+		return domain.InvitationDetail{}, shared.ErrNotFound
+	}
+	return f.detail(inv), nil
+}
+
+func (f *fakeInvitations) ListAuthored(_ context.Context, authorID uuid.UUID, status *domain.InvitationStatus, limit, offset int) ([]domain.InvitationDetail, int, error) {
+	var out []domain.InvitationDetail
+	for _, id := range f.order {
+		inv := f.rows[id]
+		if inv.CreatedByID != nil && *inv.CreatedByID == authorID && !f.lost[authorID] && (status == nil || inv.Status == *status) {
+			out = append(out, f.detail(inv))
+		}
+	}
+	total := len(out)
+	if limit > 0 && offset < len(out) {
+		out = out[offset:min(len(out), offset+limit)]
+	}
+	return out, total, nil
+}
+
+func (f *fakeInvitations) RevokeAwaitingOfAuthor(_ context.Context, authorID uuid.UUID, at time.Time) ([]domain.Invitation, error) {
+	var out []domain.Invitation
+	for _, id := range f.order {
+		inv := f.rows[id]
+		if inv.CreatedByID != nil && *inv.CreatedByID == authorID && inv.Status == domain.InvitationAwaitingApproval && inv.Revoke(at) == nil {
+			out = append(out, *inv)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeInvitations) ForUpdate(_ context.Context, id uuid.UUID) (domain.Invitation, error) {
@@ -603,4 +639,11 @@ func (r *recordingMailer) SendInvitation(_ context.Context, m InvitationMail) er
 	}
 	r.sent = append(r.sent, m)
 	return nil
+}
+
+// fakeManagers says what each (account, room) was given.
+type fakeManagers map[[2]uuid.UUID]Grant
+
+func (f fakeManagers) Grant(_ context.Context, userID, roomID uuid.UUID) (Grant, error) {
+	return f[[2]uuid.UUID{userID, roomID}], nil
 }

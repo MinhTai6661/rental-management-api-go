@@ -1,0 +1,12 @@
+Xin chào,
+
+{{.Landlord}} nhờ bạn quản lý hộ các phòng: {{.Rooms}}.
+
+Mở liên kết dưới đây để xem quyền được giao và trả lời lời mời:
+
+{{.URL}}
+
+Lời mời có hiệu lực đến {{.Expires}}.
+{{if .OptOutURL}}
+Không muốn nhận lời mời qua email? Mở liên kết này: {{.OptOutURL}}
+{{end}}

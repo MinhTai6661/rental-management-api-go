@@ -34,7 +34,7 @@ func viewerOf(c *gin.Context) (domain.Viewer, bool) {
 		return domain.Viewer{}, false
 	}
 	p, _ := httpx.PrincipalOf(c)
-	return domain.Viewer{UserID: id, AsLandlord: p.HasRole(authz.RoleLandlord)}, true
+	return domain.Viewer{UserID: id, AsLandlord: p.Role == authz.RoleLandlord, AsManager: p.Role == authz.RoleManager}, true
 }
 
 // bulkViewOf translates the refusals of a bulk answer into the language of the request.

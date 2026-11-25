@@ -146,7 +146,7 @@ func invoiceViewOf(v usecase.View, viewer domain.Viewer, now time.Time) InvoiceV
 	if v.CreatedBy != nil {
 		view.CreatedBy = &PersonView{ID: v.CreatedBy.ID, Name: v.CreatedBy.Name}
 	}
-	if viewer.AsLandlord {
+	if viewer.AsLandlord || viewer.AsManager {
 		view.Share = &ShareView{Live: v.Share.Live(now), ExpiresAt: v.Share.ExpiresAt}
 	}
 	for i, r := range v.Readings {

@@ -34,6 +34,14 @@ func (s *Invoices) create(ctx context.Context, landlordID uuid.UUID, in CreateIn
 			if err != nil {
 				return err
 			}
+			if in.AlreadyPaid {
+				// Settling a bill needs the right to, for a manager.
+				if v := s.actor(ctx, landlordID); v.AsManager {
+					if g, err := s.grantOn(ctx, v, f.RoomID); err != nil || !g.Settle {
+						return errors.Join(err, domain.ErrForbidden)
+					}
+				}
+			}
 			if mustRun && !f.Running() {
 				return domain.ErrContractNotRunning
 			}
@@ -69,7 +77,7 @@ func (s *Invoices) create(ctx context.Context, landlordID uuid.UUID, in CreateIn
 				return err
 			}
 			if in.AlreadyPaid {
-				d, err := s.invoices.ForUpdate(ctx, landlordView(landlordID), id)
+				d, err := s.invoices.ForUpdate(ctx, s.actor(ctx, landlordID), id)
 				if err != nil {
 					return err
 				}
@@ -85,7 +93,7 @@ func (s *Invoices) create(ctx context.Context, landlordID uuid.UUID, in CreateIn
 		}
 		break
 	}
-	return s.Get(ctx, landlordView(landlordID), id)
+	return s.Get(ctx, s.actor(ctx, landlordID), id)
 }
 
 // newBill is what a new bill carries besides its lines.

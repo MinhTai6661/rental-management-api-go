@@ -193,3 +193,28 @@ func TestIsRefusal(t *testing.T) {
 		t.Error("refusals are the domain's reasons only")
 	}
 }
+
+func TestManagerAbilitiesFollowTheRightsOfTheRoom(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	v := Viewer{UserID: me, AsManager: true}
+	cases := map[string]struct {
+		status    Status
+		totals    Totals
+		createdBy *uuid.UUID
+		settle    bool
+		want      Abilities
+	}{
+		"own draft":                 {StatusDraft, Totals{}, &me, false, Abilities{Update: true, Delete: true, Send: true}},
+		"landlord's draft":          {StatusDraft, Totals{}, &other, false, Abilities{Update: true, Send: true}},
+		"own sent bill is not gone": {StatusSent, Totals{}, &me, false, Abilities{Update: true, Send: true}},
+		"unknown author":            {StatusDraft, Totals{}, nil, false, Abilities{Update: true, Send: true}},
+		"settle right":              {StatusSent, Totals{}, &me, true, Abilities{Update: true, SetStatus: true, Send: true}},
+		"paid is locked":            {StatusPaid, Totals{PaidVND: 1}, &me, true, Abilities{SetStatus: true}},
+		"pending money locks":       {StatusSent, Totals{PendingVND: 5}, &me, false, Abilities{Send: true}},
+	}
+	for name, c := range cases {
+		if got := ManagerAbilities(v, c.status, c.totals, c.createdBy, c.settle); got != c.want {
+			t.Errorf("%s: got %+v, want %+v", name, got, c.want)
+		}
+	}
+}

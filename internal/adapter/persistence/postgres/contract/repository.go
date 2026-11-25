@@ -35,7 +35,7 @@ func (r *ContractRepository) Search(ctx context.Context, v domain.Viewer, f doma
 	}
 	cancellation := cancellationStatusToDB(f.CancellationStatus)
 	rows, err := q.SearchContracts(ctx, sqlcgen.SearchContractsParams{
-		AsLandlord: v.AsLandlord, ViewerID: v.UserID, Statuses: statuses, RoomID: f.RoomID, BuildingID: f.BuildingID,
+		AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, Statuses: statuses, RoomID: f.RoomID, BuildingID: f.BuildingID,
 		NoBuilding: f.NoBuilding, CancellationStatus: cancellation, SearchLike: f.SearchLike, Sort: f.Sort,
 		PaymentState: paymentStateToDB(f.PaymentState), HasUnpaidInvoice: f.HasUnpaidInvoice,
 		PageLimit: int32(f.Limit), PageOffset: int32(f.Offset), //nolint:gosec // bounded by httpx.ParsePage
@@ -44,7 +44,7 @@ func (r *ContractRepository) Search(ctx context.Context, v domain.Viewer, f doma
 		return nil, 0, postgres.Translate(err)
 	}
 	total, err := q.CountContracts(ctx, sqlcgen.CountContractsParams{
-		AsLandlord: v.AsLandlord, ViewerID: v.UserID, Statuses: statuses, RoomID: f.RoomID, BuildingID: f.BuildingID,
+		AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, Statuses: statuses, RoomID: f.RoomID, BuildingID: f.BuildingID,
 		NoBuilding: f.NoBuilding, CancellationStatus: cancellation, SearchLike: f.SearchLike,
 		PaymentState: paymentStateToDB(f.PaymentState), HasUnpaidInvoice: f.HasUnpaidInvoice,
 	})
@@ -61,7 +61,7 @@ func (r *ContractRepository) Search(ctx context.Context, v domain.Viewer, f doma
 // Get returns one contract the viewer sees, or shared.ErrNotFound.
 func (r *ContractRepository) Get(ctx context.Context, v domain.Viewer, id uuid.UUID) (domain.Detail, error) {
 	rows, err := postgres.Queries(ctx, r.pool).SearchContracts(ctx, sqlcgen.SearchContractsParams{
-		AsLandlord: v.AsLandlord, ViewerID: v.UserID, ID: &id, PageLimit: 1,
+		AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, ID: &id, PageLimit: 1,
 	})
 	if err != nil {
 		return domain.Detail{}, postgres.Translate(err)

@@ -76,30 +76,33 @@ JOIN rooms r ON r.id = c.room_id
 LEFT JOIN users t ON t.id = c.tenant_id
 WHERE c.deleted_at IS NULL
   AND (($1::boolean AND c.landlord_id = $2 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $1::boolean AND c.tenant_id = $2))
-  AND ($3::text[] IS NULL OR c.status = ANY($3::text[]))
-  AND ($4::uuid IS NULL OR c.room_id = $4::uuid)
-  AND ($5::uuid IS NULL OR r.building_id = $5::uuid)
-  AND (NOT $6::boolean OR r.building_id IS NULL)
-  AND ($7::text IS NULL OR c.cancellation_status = $7::text)
-  AND ($8::text IS NULL
-       OR ($8::text = 'due' AND EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
+       OR ($3::boolean AND c.tenant_id IS DISTINCT FROM $2 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $2 AND rm.status = 'active'))
+       OR (NOT $1::boolean AND NOT $3::boolean AND c.tenant_id = $2))
+  AND ($4::text[] IS NULL OR c.status = ANY($4::text[]))
+  AND ($5::uuid IS NULL OR c.room_id = $5::uuid)
+  AND ($6::uuid IS NULL OR r.building_id = $6::uuid)
+  AND (NOT $7::boolean OR r.building_id IS NULL)
+  AND ($8::text IS NULL OR c.cancellation_status = $8::text)
+  AND ($9::text IS NULL
+       OR ($9::text = 'due' AND EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
                AND i.total_amount_vnd > coalesce((SELECT sum(p.amount_vnd) FROM payments p WHERE p.invoice_id = i.id AND p.status IN ('confirmed', 'pending')), 0)))
-       OR ($8::text = 'review' AND EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending'))
-       OR ($8::text = 'settled' AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
+       OR ($9::text = 'review' AND EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending'))
+       OR ($9::text = 'settled' AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
                AND i.total_amount_vnd > coalesce((SELECT sum(p.amount_vnd) FROM payments p WHERE p.invoice_id = i.id AND p.status IN ('confirmed', 'pending')), 0)) AND NOT EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending')))
-  AND (NOT $9::boolean
+  AND (NOT $10::boolean
        OR EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status IN ('draft', 'sent')))
-  AND ($10::text IS NULL
-       OR lower(r.name) LIKE '%' || $10::text || '%' ESCAPE '\'
-       OR lower(t.full_name) LIKE '%' || $10::text || '%' ESCAPE '\'
-       OR lower(t.email) LIKE '%' || $10::text || '%' ESCAPE '\'
-       OR lower(c.tenant_name) LIKE '%' || $10::text || '%' ESCAPE '\')
+  AND ($11::text IS NULL
+       OR lower(r.name) LIKE '%' || $11::text || '%' ESCAPE '\'
+       OR lower(t.full_name) LIKE '%' || $11::text || '%' ESCAPE '\'
+       OR lower(t.email) LIKE '%' || $11::text || '%' ESCAPE '\'
+       OR lower(c.tenant_name) LIKE '%' || $11::text || '%' ESCAPE '\')
 `
 
 type CountContractsParams struct {
 	AsLandlord         bool
 	ViewerID           uuid.UUID
+	AsManager          bool
 	Statuses           []string
 	RoomID             *uuid.UUID
 	BuildingID         *uuid.UUID
@@ -114,6 +117,7 @@ func (q *Queries) CountContracts(ctx context.Context, arg CountContractsParams) 
 	row := q.db.QueryRow(ctx, countContracts,
 		arg.AsLandlord,
 		arg.ViewerID,
+		arg.AsManager,
 		arg.Statuses,
 		arg.RoomID,
 		arg.BuildingID,
@@ -536,42 +540,45 @@ LEFT JOIN LATERAL (
 ) b ON true
 WHERE c.deleted_at IS NULL
   AND (($1::boolean AND c.landlord_id = $2 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $1::boolean AND c.tenant_id = $2))
-  AND ($3::uuid IS NULL OR c.id = $3::uuid)
-  AND ($4::text[] IS NULL OR c.status = ANY($4::text[]))
-  AND ($5::uuid IS NULL OR c.room_id = $5::uuid)
-  AND ($6::uuid IS NULL OR r.building_id = $6::uuid)
-  AND (NOT $7::boolean OR r.building_id IS NULL)
-  AND ($8::text IS NULL OR c.cancellation_status = $8::text)
-  AND ($9::text IS NULL
-       OR ($9::text = 'due' AND EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
+       OR ($3::boolean AND c.tenant_id IS DISTINCT FROM $2 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $2 AND rm.status = 'active'))
+       OR (NOT $1::boolean AND NOT $3::boolean AND c.tenant_id = $2))
+  AND ($4::uuid IS NULL OR c.id = $4::uuid)
+  AND ($5::text[] IS NULL OR c.status = ANY($5::text[]))
+  AND ($6::uuid IS NULL OR c.room_id = $6::uuid)
+  AND ($7::uuid IS NULL OR r.building_id = $7::uuid)
+  AND (NOT $8::boolean OR r.building_id IS NULL)
+  AND ($9::text IS NULL OR c.cancellation_status = $9::text)
+  AND ($10::text IS NULL
+       OR ($10::text = 'due' AND EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
                AND i.total_amount_vnd > coalesce((SELECT sum(p.amount_vnd) FROM payments p WHERE p.invoice_id = i.id AND p.status IN ('confirmed', 'pending')), 0)))
-       OR ($9::text = 'review' AND EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending'))
-       OR ($9::text = 'settled' AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
+       OR ($10::text = 'review' AND EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending'))
+       OR ($10::text = 'settled' AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status = 'sent'
                AND i.total_amount_vnd > coalesce((SELECT sum(p.amount_vnd) FROM payments p WHERE p.invoice_id = i.id AND p.status IN ('confirmed', 'pending')), 0)) AND NOT EXISTS (SELECT 1 FROM invoices i JOIN payments p ON p.invoice_id = i.id WHERE i.contract_id = c.id AND i.status = 'sent' AND p.status = 'pending')))
-  AND (NOT $10::boolean
+  AND (NOT $11::boolean
        OR EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id AND i.status IN ('draft', 'sent')))
-  AND ($11::text IS NULL
-       OR lower(r.name) LIKE '%' || $11::text || '%' ESCAPE '\'
-       OR lower(t.full_name) LIKE '%' || $11::text || '%' ESCAPE '\'
-       OR lower(t.email) LIKE '%' || $11::text || '%' ESCAPE '\'
-       OR lower(c.tenant_name) LIKE '%' || $11::text || '%' ESCAPE '\')
+  AND ($12::text IS NULL
+       OR lower(r.name) LIKE '%' || $12::text || '%' ESCAPE '\'
+       OR lower(t.full_name) LIKE '%' || $12::text || '%' ESCAPE '\'
+       OR lower(t.email) LIKE '%' || $12::text || '%' ESCAPE '\'
+       OR lower(c.tenant_name) LIKE '%' || $12::text || '%' ESCAPE '\')
 ORDER BY
-  CASE WHEN $12::text = 'created_at' THEN c.created_at END ASC,
-  CASE WHEN $12::text = '-created_at' THEN c.created_at END DESC,
-  CASE WHEN $12::text = 'starts_on' THEN c.starts_on END ASC,
-  CASE WHEN $12::text = '-starts_on' THEN c.starts_on END DESC,
-  CASE WHEN $12::text = 'ends_on' THEN c.ends_on END ASC NULLS LAST,
-  CASE WHEN $12::text = '-ends_on' THEN c.ends_on END DESC NULLS LAST,
-  CASE WHEN $12::text = '' THEN c.display_order END ASC,
-  CASE WHEN $12::text = '' THEN c.created_at END DESC,
+  CASE WHEN $13::text = 'created_at' THEN c.created_at END ASC,
+  CASE WHEN $13::text = '-created_at' THEN c.created_at END DESC,
+  CASE WHEN $13::text = 'starts_on' THEN c.starts_on END ASC,
+  CASE WHEN $13::text = '-starts_on' THEN c.starts_on END DESC,
+  CASE WHEN $13::text = 'ends_on' THEN c.ends_on END ASC NULLS LAST,
+  CASE WHEN $13::text = '-ends_on' THEN c.ends_on END DESC NULLS LAST,
+  CASE WHEN $13::text = '' THEN c.display_order END ASC,
+  CASE WHEN $13::text = '' THEN c.created_at END DESC,
   c.id DESC
-LIMIT $14 OFFSET $13
+LIMIT $15 OFFSET $14
 `
 
 type SearchContractsParams struct {
 	AsLandlord         bool
 	ViewerID           uuid.UUID
+	AsManager          bool
 	ID                 *uuid.UUID
 	Statuses           []string
 	RoomID             *uuid.UUID
@@ -647,6 +654,7 @@ func (q *Queries) SearchContracts(ctx context.Context, arg SearchContractsParams
 	rows, err := q.db.Query(ctx, searchContracts,
 		arg.AsLandlord,
 		arg.ViewerID,
+		arg.AsManager,
 		arg.ID,
 		arg.Statuses,
 		arg.RoomID,

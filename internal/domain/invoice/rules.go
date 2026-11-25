@@ -3,6 +3,8 @@ package invoice
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ParseDelivery reads a delivery code.
@@ -54,6 +56,14 @@ func AbilitiesFor(v Viewer, s Status, t Totals) Abilities {
 	}
 	open := !Locked(s, t)
 	return Abilities{Update: open, Delete: open, SetStatus: true, Send: CanSend(s)}
+}
+
+// ManagerAbilities tells what a manager may do with a bill of a room handed to them: correct it while it is unlocked,
+// send it unless it is paid, remove only a draft they wrote themselves, and settle it only with payments.review.
+func ManagerAbilities(v Viewer, s Status, t Totals, createdBy *uuid.UUID, canSettle bool) Abilities {
+	open := !Locked(s, t)
+	mine := createdBy != nil && *createdBy == v.UserID
+	return Abilities{Update: open, Delete: open && s == StatusDraft && mine, SetStatus: canSettle, Send: CanSend(s)}
 }
 
 // VisibleToTenant says whether a tenant sees the bill in the app: only a bill that was sent to the account (a draft is

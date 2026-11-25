@@ -19,18 +19,26 @@ JOIN contracts c ON c.id = i.contract_id
 JOIN rooms r ON r.id = c.room_id
 WHERE c.deleted_at IS NULL
   AND (($1::boolean AND c.landlord_id = $2 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $1::boolean AND c.tenant_id = $2 AND i.status <> 'draft' AND i.delivery = 'app'))
-  AND i.contract_id = $3
+       OR ($3::boolean AND c.tenant_id IS DISTINCT FROM $2 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $2 AND rm.status = 'active'))
+       OR (NOT $1::boolean AND NOT $3::boolean AND c.tenant_id = $2 AND i.status <> 'draft' AND i.delivery = 'app'))
+  AND i.contract_id = $4
 `
 
 type CountInvoicesParams struct {
 	AsLandlord bool
 	ViewerID   uuid.UUID
+	AsManager  bool
 	ContractID uuid.UUID
 }
 
 func (q *Queries) CountInvoices(ctx context.Context, arg CountInvoicesParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countInvoices, arg.AsLandlord, arg.ViewerID, arg.ContractID)
+	row := q.db.QueryRow(ctx, countInvoices,
+		arg.AsLandlord,
+		arg.ViewerID,
+		arg.AsManager,
+		arg.ContractID,
+	)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -428,7 +436,9 @@ JOIN contracts c ON c.id = i.contract_id
 JOIN rooms r ON r.id = c.room_id
 WHERE i.id = $1 AND c.deleted_at IS NULL
   AND (($2::boolean AND c.landlord_id = $3 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $2::boolean AND c.tenant_id = $3 AND i.status <> 'draft' AND i.delivery = 'app'))
+       OR ($4::boolean AND c.tenant_id IS DISTINCT FROM $3 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $3 AND rm.status = 'active'))
+       OR (NOT $2::boolean AND NOT $4::boolean AND c.tenant_id = $3 AND i.status <> 'draft' AND i.delivery = 'app'))
 FOR UPDATE OF i
 `
 
@@ -436,11 +446,17 @@ type LockInvoiceParams struct {
 	ID         uuid.UUID
 	AsLandlord bool
 	ViewerID   uuid.UUID
+	AsManager  bool
 }
 
 // Locks a bill the viewer sees until the transaction ends (same scope as SearchInvoices).
 func (q *Queries) LockInvoice(ctx context.Context, arg LockInvoiceParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, lockInvoice, arg.ID, arg.AsLandlord, arg.ViewerID)
+	row := q.db.QueryRow(ctx, lockInvoice,
+		arg.ID,
+		arg.AsLandlord,
+		arg.ViewerID,
+		arg.AsManager,
+	)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -508,18 +524,21 @@ LEFT JOIN users cb ON cb.id = i.created_by_id
 WHERE c.deleted_at IS NULL
   AND (NOT $1::boolean
        OR ($2::boolean AND c.landlord_id = $3 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $2::boolean AND c.tenant_id = $3 AND i.status <> 'draft' AND i.delivery = 'app'))
-  AND ($4::uuid IS NULL OR i.id = $4::uuid)
-  AND ($5::uuid IS NULL OR i.contract_id = $5::uuid)
-  AND ($6::text IS NULL OR i.share_token_hash = $6::text)
+       OR ($4::boolean AND c.tenant_id IS DISTINCT FROM $3 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $3 AND rm.status = 'active'))
+       OR (NOT $2::boolean AND NOT $4::boolean AND c.tenant_id = $3 AND i.status <> 'draft' AND i.delivery = 'app'))
+  AND ($5::uuid IS NULL OR i.id = $5::uuid)
+  AND ($6::uuid IS NULL OR i.contract_id = $6::uuid)
+  AND ($7::text IS NULL OR i.share_token_hash = $7::text)
 ORDER BY i.period_start DESC, i.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type SearchInvoicesParams struct {
 	Scoped     bool
 	AsLandlord bool
 	ViewerID   uuid.UUID
+	AsManager  bool
 	ID         *uuid.UUID
 	ContractID *uuid.UUID
 	ShareHash  *string
@@ -578,6 +597,7 @@ func (q *Queries) SearchInvoices(ctx context.Context, arg SearchInvoicesParams) 
 		arg.Scoped,
 		arg.AsLandlord,
 		arg.ViewerID,
+		arg.AsManager,
 		arg.ID,
 		arg.ContractID,
 		arg.ShareHash,

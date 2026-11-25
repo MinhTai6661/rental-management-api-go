@@ -31,11 +31,14 @@ type Deps struct {
 	Audit     AuditRecorder
 	Mailer    InvoiceMailer
 	Plans     PlanFeatures
-	Tokens    ShareTokens
-	Sealer    Sealer
-	Random    Random
-	Clock     Clock
-	Log       *slog.Logger
+	// Acting and Managers default to NoActing and NoManagers.
+	Acting   Acting
+	Managers Managers
+	Tokens   ShareTokens
+	Sealer   Sealer
+	Random   Random
+	Clock    Clock
+	Log      *slog.Logger
 }
 
 // Options are the settings of the use cases.
@@ -63,6 +66,8 @@ type core struct {
 	audit     AuditRecorder
 	mailer    InvoiceMailer
 	plans     PlanFeatures
+	acting    Acting
+	managers  Managers
 	tokens    ShareTokens
 	sealer    Sealer
 	random    Random
@@ -74,7 +79,7 @@ type core struct {
 func newCore(d Deps, o Options) *core {
 	c := &core{
 		tx: d.Tx, invoices: d.Invoices, contracts: d.Contracts, charges: d.Charges, ledger: d.Ledger, notifier: d.Notifier,
-		audit: d.Audit, mailer: d.Mailer, plans: d.Plans, tokens: d.Tokens, sealer: d.Sealer, random: d.Random,
+		audit: d.Audit, mailer: d.Mailer, plans: d.Plans, acting: d.Acting, managers: d.Managers, tokens: d.Tokens, sealer: d.Sealer, random: d.Random,
 		clock: d.Clock, log: d.Log, opts: o,
 	}
 	if c.ledger == nil {
@@ -91,6 +96,12 @@ func newCore(d Deps, o Options) *core {
 	}
 	if c.plans == nil {
 		c.plans = NoPlanFeatures{}
+	}
+	if c.acting == nil {
+		c.acting = NoActing{}
+	}
+	if c.managers == nil {
+		c.managers = NoManagers{}
 	}
 	if c.random == nil {
 		c.random = CryptoRandom{}
@@ -129,16 +140,67 @@ func notFound(err error) error {
 // landlordView is the landlord as a viewer of bills.
 func landlordView(id uuid.UUID) domain.Viewer { return domain.Viewer{UserID: id, AsLandlord: true} }
 
-// lockContract locks the contract of a landlord's bill; somebody else's contract is not found.
-func (c *core) lockContract(ctx context.Context, landlordID, id uuid.UUID) (domain.ContractFacts, error) {
+// actor is the caller as a viewer of bills: a manager when the request acts as one, else a landlord.
+func (c *core) actor(ctx context.Context, id uuid.UUID) domain.Viewer {
+	if c.acting.AsManager(ctx) {
+		return domain.Viewer{UserID: id, AsManager: true}
+	}
+	return landlordView(id)
+}
+
+// grantOn is what the manager viewer was given on the room; domain.ErrNotFound when the room is not handed to them (a
+// room of somebody else looks like one that does not exist). Landlords have no grant: it is the zero value.
+func (c *core) grantOn(ctx context.Context, v domain.Viewer, roomID uuid.UUID) (ManagerGrant, error) {
+	if !v.AsManager {
+		return ManagerGrant{}, nil
+	}
+	grants, err := c.managers.Grants(ctx, v.UserID, []uuid.UUID{roomID})
+	if err != nil {
+		return ManagerGrant{}, err
+	}
+	g := grants[roomID]
+	if !g.Active {
+		return ManagerGrant{}, domain.ErrNotFound
+	}
+	return g, nil
+}
+
+// lockContract locks the contract of a bill the caller writes: the landlord's own, or one on a room handed to the
+// manager acting (never the contract the manager holds as tenant); anybody else's is not found.
+func (c *core) lockContract(ctx context.Context, actorID, id uuid.UUID) (domain.ContractFacts, error) {
 	facts, err := c.contracts.Lock(ctx, id)
 	if err != nil {
 		return domain.ContractFacts{}, notFound(err)
 	}
-	if facts.LandlordID != landlordID {
+	v := c.actor(ctx, actorID)
+	if v.AsManager {
+		if facts.TenantID != nil && *facts.TenantID == actorID {
+			return domain.ContractFacts{}, domain.ErrNotFound
+		}
+		if _, err := c.grantOn(ctx, v, facts.RoomID); err != nil {
+			return domain.ContractFacts{}, err
+		}
+		return facts, nil
+	}
+	if facts.LandlordID != actorID {
 		return domain.ContractFacts{}, domain.ErrNotFound
 	}
 	return facts, nil
+}
+
+// tellLandlord tells the landlord that a manager sent or corrected a bill, when the hand-over asks for it. The bill is
+// stored already, so a failure is logged and never undoes it.
+func (c *core) tellLandlord(ctx context.Context, v domain.Viewer, d domain.Detail, kind string) {
+	if !v.AsManager {
+		return
+	}
+	g, err := c.grantOn(ctx, v, d.Contract.RoomID)
+	if err != nil || !g.Notify {
+		return
+	}
+	params := c.params(d)
+	params["manager"] = g.Name
+	c.notify(ctx, Notification{UserID: d.Contract.LandlordID, Kind: kind, Params: params, URL: "/contracts/" + d.ContractID.String(), Audience: AudienceLandlord})
 }
 
 // billedSet is the set of the period start dates of the contract that have a bill.
@@ -224,10 +286,24 @@ func (c *core) views(ctx context.Context, v domain.Viewer, details []domain.Deta
 	if err != nil {
 		return nil, err
 	}
+	var grants map[uuid.UUID]ManagerGrant
+	if v.AsManager {
+		rooms := make([]uuid.UUID, len(details))
+		for i, d := range details {
+			rooms[i] = d.Contract.RoomID
+		}
+		if grants, err = c.managers.Grants(ctx, v.UserID, rooms); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]View, len(details))
 	for i, d := range details {
 		t := totals[d.ID]
-		out[i] = View{Detail: d, Summary: domain.SummaryOf(d.TotalVND, t), Abilities: domain.AbilitiesFor(v, d.Status, t)}
+		ab := domain.AbilitiesFor(v, d.Status, t)
+		if v.AsManager {
+			ab = domain.ManagerAbilities(v, d.Status, t, d.CreatedByID, grants[d.Contract.RoomID].Settle)
+		}
+		out[i] = View{Detail: d, Summary: domain.SummaryOf(d.TotalVND, t), Abilities: ab}
 	}
 	return out, nil
 }

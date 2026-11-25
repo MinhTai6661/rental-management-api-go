@@ -20,7 +20,9 @@ LEFT JOIN users cb ON cb.id = i.created_by_id
 WHERE c.deleted_at IS NULL
   AND (NOT @scoped::boolean
        OR (@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
   AND (sqlc.narg('id')::uuid IS NULL OR i.id = sqlc.narg('id')::uuid)
   AND (sqlc.narg('contract_id')::uuid IS NULL OR i.contract_id = sqlc.narg('contract_id')::uuid)
   AND (sqlc.narg('share_hash')::text IS NULL OR i.share_token_hash = sqlc.narg('share_hash')::text)
@@ -34,7 +36,9 @@ JOIN contracts c ON c.id = i.contract_id
 JOIN rooms r ON r.id = c.room_id
 WHERE c.deleted_at IS NULL
   AND ((@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
   AND i.contract_id = @contract_id;
 
 -- name: LockInvoice :one
@@ -45,7 +49,9 @@ JOIN contracts c ON c.id = i.contract_id
 JOIN rooms r ON r.id = c.room_id
 WHERE i.id = @id AND c.deleted_at IS NULL
   AND ((@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id AND i.status <> 'draft' AND i.delivery = 'app'))
 FOR UPDATE OF i;
 
 -- name: ListDueInvoices :many

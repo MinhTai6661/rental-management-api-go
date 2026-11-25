@@ -91,6 +91,9 @@ type ContractInvitation struct {
 	ContractID      *uuid.UUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	ApprovedByID    *uuid.UUID
+	ApprovedAt      *time.Time
+	ApprovalNote    *string
 }
 
 type InvoiceItem struct {
@@ -130,6 +133,27 @@ type Listing struct {
 	UnpublishedAt *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type ManagerInvitation struct {
+	ID              uuid.UUID
+	LandlordID      uuid.UUID
+	Status          string
+	TokenHash       string
+	LinkTokenSealed *string
+	ExpiresAt       time.Time
+	NotifyLandlord  bool
+	RecipientID     *uuid.UUID
+	RecipientEmail  *string
+	AnsweredByID    *uuid.UUID
+	AnsweredAt      *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type ManagerInvitationCapability struct {
+	InvitationID uuid.UUID
+	Capability   string
 }
 
 type Medium struct {
@@ -216,6 +240,25 @@ type Role struct {
 type RolePermission struct {
 	RoleCode       string
 	PermissionCode string
+}
+
+type RoomManager struct {
+	ID             uuid.UUID
+	LandlordID     uuid.UUID
+	RoomID         uuid.UUID
+	ManagerID      uuid.UUID
+	Status         string
+	NotifyLandlord bool
+	AssignedByID   uuid.UUID
+	AcceptedAt     time.Time
+	RevokedAt      *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type RoomManagerCapability struct {
+	RoomManagerID uuid.UUID
+	Capability    string
 }
 
 type Subscription struct {

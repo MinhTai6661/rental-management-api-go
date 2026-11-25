@@ -1,0 +1,12 @@
+Hello,
+
+{{.Landlord}} asks you to manage these rooms for them: {{.Rooms}}.
+
+Open the link below to see what you would be allowed to do and to answer the invitation:
+
+{{.URL}}
+
+The invitation is open until {{.Expires}}.
+{{if .OptOutURL}}
+Do not want invitations by email? Open this link: {{.OptOutURL}}
+{{end}}

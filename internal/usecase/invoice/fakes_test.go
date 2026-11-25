@@ -34,6 +34,8 @@ type fakeStore struct {
 	reminded  map[string]map[uuid.UUID]time.Time // kind -> bill -> day
 	// hidden contracts are not confirmed yet, so a landlord cannot see them.
 	hidden map[uuid.UUID]bool
+	// grants are the rooms handed to managers: room -> manager -> grant.
+	grants map[uuid.UUID]map[uuid.UUID]ManagerGrant
 	// clashes is how many inserts fail with a number or transfer text that was taken at the same moment.
 	clashes int
 }
@@ -42,6 +44,7 @@ func newStore(now time.Time) *fakeStore {
 	return &fakeStore{
 		now: now, contracts: map[uuid.UUID]*domain.ContractFacts{}, charges: map[uuid.UUID][]domain.Charge{},
 		invoices: map[uuid.UUID]*domain.Invoice{}, reminded: map[string]map[uuid.UUID]time.Time{}, hidden: map[uuid.UUID]bool{},
+		grants: map[uuid.UUID]map[uuid.UUID]ManagerGrant{},
 	}
 }
 
@@ -71,6 +74,9 @@ func (f *fakeStore) charge(c *domain.ContractFacts, unit, name string, amount in
 }
 
 func (f *fakeStore) sees(v domain.Viewer, c *domain.ContractFacts) bool {
+	if v.AsManager {
+		return f.grants[c.RoomID][v.UserID].Active && (c.TenantID == nil || *c.TenantID != v.UserID)
+	}
 	if v.AsLandlord {
 		return c.LandlordID == v.UserID && !f.hidden[c.ID]
 	}
@@ -82,7 +88,7 @@ func (f *fakeStore) sees2(v domain.Viewer, inv *domain.Invoice) bool {
 	if !f.sees(v, c) {
 		return false
 	}
-	return v.AsLandlord || domain.VisibleToTenant(inv.Status, inv.Delivery)
+	return v.AsLandlord || v.AsManager || domain.VisibleToTenant(inv.Status, inv.Delivery)
 }
 
 func (f *fakeStore) detail(inv *domain.Invoice) domain.Detail {
@@ -567,6 +573,7 @@ type world struct {
 	invoices *Invoices
 	public   *Public
 	auto     *Automation
+	acting   *fakeActing
 	landlord uuid.UUID
 	tenant   uuid.UUID
 }
@@ -578,7 +585,7 @@ func newWorld() *world {
 	w := &world{
 		store: newStore(testNow), ledger: &fakeLedger{totals: map[uuid.UUID]domain.Totals{}}, rec: &recorder{}, plans: fakePlans{},
 		tokens: &fakeTokens{}, sealer: &fakeSealer{}, random: &seqRandom{}, clock: &fakeClock{t: testNow},
-		landlord: id(), tenant: id(),
+		landlord: id(), tenant: id(), acting: &fakeActing{},
 	}
 	w.opts = Options{Location: time.UTC, WebURL: "https://app.example.vn", ShareTTL: 90 * 24 * time.Hour}
 	w.deps = Deps{
@@ -591,6 +598,7 @@ func newWorld() *world {
 }
 
 func (w *world) rebuild() {
+	w.deps.Acting, w.deps.Managers = w.acting, fakeManagers{w.store}
 	w.invoices, w.public, w.auto = NewInvoices(w.deps, w.opts), NewPublic(w.deps, w.opts), NewAutomation(w.deps, w.opts)
 }
 
@@ -598,3 +606,21 @@ func (w *world) landlordView() domain.Viewer {
 	return domain.Viewer{UserID: w.landlord, AsLandlord: true}
 }
 func (w *world) tenantView() domain.Viewer { return domain.Viewer{UserID: w.tenant} }
+
+// fakeActing says whether the request acts as a manager.
+type fakeActing struct{ on bool }
+
+func (a *fakeActing) AsManager(context.Context) bool { return a.on }
+
+// fakeManagers reads the grants kept in the store (room -> manager -> grant).
+type fakeManagers struct{ *fakeStore }
+
+func (f fakeManagers) Grants(_ context.Context, managerID uuid.UUID, rooms []uuid.UUID) (map[uuid.UUID]ManagerGrant, error) {
+	out := map[uuid.UUID]ManagerGrant{}
+	for _, r := range rooms {
+		if g, ok := f.grants[r][managerID]; ok {
+			out[r] = g
+		}
+	}
+	return out, nil
+}

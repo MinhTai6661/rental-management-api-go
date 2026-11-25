@@ -7,6 +7,7 @@ import (
 	"rental-management/internal/adapter/http/httpx"
 	domain "rental-management/internal/domain/contract"
 	usecase "rental-management/internal/usecase/contract"
+	"rental-management/pkg/authz"
 )
 
 // InvitationHandler serves the offers of rooms by link: the landlord's side (make, list, copy the link, withdraw) and
@@ -46,7 +47,16 @@ func (h *InvitationHandler) List(c *gin.Context) {
 		s := domain.InvitationStatus(*raw)
 		status = &s
 	}
-	items, total, err := h.uc.List(c.Request.Context(), landlord, status, page.PerPage, page.Offset())
+	var (
+		items []domain.InvitationDetail
+		total int
+	)
+	if p, _ := httpx.PrincipalOf(c); p.Role == authz.RoleManager {
+		// A manager sees only the offers they wrote, while they still manage the room.
+		items, total, err = h.uc.ListAuthored(c.Request.Context(), landlord, status, page.PerPage, page.Offset())
+	} else {
+		items, total, err = h.uc.List(c.Request.Context(), landlord, status, page.PerPage, page.Offset())
+	}
 	if err != nil {
 		httpx.Fail(c, mapContractError(err))
 		return
@@ -156,6 +166,63 @@ func (h *InvitationHandler) Revoke(c *gin.Context) {
 		return
 	}
 	if err := h.uc.Revoke(c.Request.Context(), landlord, id); err != nil {
+		httpx.Fail(c, mapContractError(err))
+		return
+	}
+	httpx.NoContent(c)
+}
+
+// approvalRequest is the body of approve: an optional note for the manager.
+type approvalRequest struct {
+	Note *string `json:"note" validate:"omitempty,max=1000"`
+}
+
+// rejectionRequest is the body of reject: the reason, which the manager is told.
+type rejectionRequest struct {
+	Note string `json:"note" validate:"required,max=1000"`
+}
+
+// Approve answers POST /v1/contract-invitations/{id}/approve: the offer a manager wrote goes out.
+func (h *InvitationHandler) Approve(c *gin.Context) {
+	landlord, ok := userIDOf(c)
+	if !ok {
+		return
+	}
+	id, err := httpx.ParseUUIDParam(c, "id")
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	var req approvalRequest
+	if err := h.binder.JSON(c, &req); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	issued, err := h.uc.Approve(c.Request.Context(), landlord, id, req.Note)
+	if err != nil {
+		httpx.Fail(c, mapContractError(err))
+		return
+	}
+	httpx.OK(c, issuedInvitationViewOf(issued, h.clock.Now()))
+}
+
+// Reject answers POST /v1/contract-invitations/{id}/reject: the offer a manager wrote is turned down with a reason.
+func (h *InvitationHandler) Reject(c *gin.Context) {
+	landlord, ok := userIDOf(c)
+	if !ok {
+		return
+	}
+	id, err := httpx.ParseUUIDParam(c, "id")
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	var req rejectionRequest
+	if err := h.binder.JSON(c, &req); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if err := h.uc.Reject(c.Request.Context(), landlord, id, req.Note); err != nil {
 		httpx.Fail(c, mapContractError(err))
 		return
 	}

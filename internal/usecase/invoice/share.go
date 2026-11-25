@@ -26,7 +26,7 @@ func (s *Invoices) RegenerateShareLink(ctx context.Context, landlordID, id uuid.
 func (s *Invoices) shareOp(ctx context.Context, landlordID, id uuid.UUID, fresh bool) (Link, error) {
 	var link Link
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		d, err := s.invoices.ForUpdate(ctx, landlordView(landlordID), id)
+		d, err := s.invoices.ForUpdate(ctx, s.actor(ctx, landlordID), id)
 		if err != nil {
 			return notFound(err)
 		}
@@ -47,7 +47,7 @@ func (s *Invoices) shareOp(ctx context.Context, landlordID, id uuid.UUID, fresh 
 // no link.
 func (s *Invoices) RevokeShareLink(ctx context.Context, landlordID, id uuid.UUID) error {
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		d, err := s.invoices.ForUpdate(ctx, landlordView(landlordID), id)
+		d, err := s.invoices.ForUpdate(ctx, s.actor(ctx, landlordID), id)
 		if err != nil {
 			return notFound(err)
 		}

@@ -105,7 +105,7 @@ type ProcessedImage struct {
 	ContentType string
 	// Ext is "webp" or "jpg".
 	Ext string
-	// Thumb is a JPEG.
+	// Thumb is a WebP.
 	Thumb []byte
 }
 

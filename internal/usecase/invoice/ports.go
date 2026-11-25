@@ -276,3 +276,41 @@ type ClockFunc func() time.Time
 
 // Now calls the function.
 func (f ClockFunc) Now() time.Time { return f() }
+
+// Acting tells in which role the request is made, so what a hand-over allows counts only for someone acting as a
+// manager (the request's role, through the composition root).
+type Acting interface {
+	AsManager(ctx context.Context) bool
+}
+
+// NoActing is the default: nobody acts as a manager.
+type NoActing struct{}
+
+// AsManager is false.
+func (NoActing) AsManager(context.Context) bool { return false }
+
+// ManagerGrant is what a manager was given on one room.
+type ManagerGrant struct {
+	// Active: the room is handed to the manager.
+	Active bool
+	// Settle: the manager may mark bills paid or unpaid (payments.review).
+	Settle bool
+	// Notify: the landlord is told when the manager sends or edits a bill.
+	Notify bool
+	// Name is how the landlord knows the manager (filled when Notify is set).
+	Name string
+}
+
+// Managers tells what a manager was given on rooms (the manager context, through the composition root).
+type Managers interface {
+	// Grants returns the grant on each of the rooms; a room that is not handed to the manager is missing or inactive.
+	Grants(ctx context.Context, managerID uuid.UUID, roomIDs []uuid.UUID) (map[uuid.UUID]ManagerGrant, error)
+}
+
+// NoManagers is the default: nobody manages anything.
+type NoManagers struct{}
+
+// Grants is empty.
+func (NoManagers) Grants(context.Context, uuid.UUID, []uuid.UUID) (map[uuid.UUID]ManagerGrant, error) {
+	return map[uuid.UUID]ManagerGrant{}, nil
+}

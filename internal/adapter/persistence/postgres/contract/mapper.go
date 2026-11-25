@@ -87,7 +87,8 @@ func invitationOf(r sqlcgen.ContractInvitation) domain.Invitation {
 			EndsOn: r.EndsOn, ContractStatus: domain.Status(r.ContractStatus), Note: r.Note,
 		},
 		RecipientID: r.RecipientID, RecipientEmail: r.RecipientEmail, AnsweredByID: r.AnsweredByID, AnsweredAt: r.AnsweredAt,
-		ContractID: r.ContractID, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		ContractID: r.ContractID, ApprovedByID: r.ApprovedByID, ApprovedAt: r.ApprovedAt, ApprovalNote: r.ApprovalNote,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 

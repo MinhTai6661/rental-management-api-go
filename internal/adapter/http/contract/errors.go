@@ -63,6 +63,8 @@ func contractError(err error) *apperr.Error {
 		return apperr.E(apperr.KindNotFound, apperr.CodeInvitationInvalid)
 	case errors.Is(err, domain.ErrInvitationNotPending):
 		return apperr.Conflict(apperr.CodeInvitationNotPending)
+	case errors.Is(err, domain.ErrInvitationNotAwaiting):
+		return apperr.Conflict(apperr.CodeInvitationNotAwaiting)
 	case errors.Is(err, domain.ErrInvitationLinkUnavailable):
 		return apperr.E(apperr.KindNotFound, apperr.CodeInvitationLinkUnavailable)
 	case errors.Is(err, domain.ErrInvitationOwnOffer):

@@ -35,6 +35,8 @@ func invoiceError(err error) *apperr.Error {
 		return nil
 	case errors.Is(err, domain.ErrNotFound):
 		return apperr.NotFound()
+	case errors.Is(err, domain.ErrForbidden):
+		return apperr.Forbidden()
 	case errors.Is(err, domain.ErrContractNotRunning):
 		return apperr.Conflict(apperr.CodeInvoiceNotRunning)
 	case errors.Is(err, domain.ErrAlreadyPaid):

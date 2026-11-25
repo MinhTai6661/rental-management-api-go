@@ -93,8 +93,12 @@ type Invitation struct {
 	AnsweredByID   *uuid.UUID
 	AnsweredAt     *time.Time
 	ContractID     *uuid.UUID
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// ApprovedByID, ApprovedAt and ApprovalNote are the landlord's answer to an offer a manager wrote.
+	ApprovedByID *uuid.UUID
+	ApprovedAt   *time.Time
+	ApprovalNote *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Audience says who may answer the invitation.
@@ -143,6 +147,29 @@ func (i *Invitation) Renew(hash string, sealed *string, expires time.Time) error
 	return nil
 }
 
+// Approve opens an offer a manager wrote: it waits for an answer from now on, under a new secret and a new end.
+func (i *Invitation) Approve(by uuid.UUID, at time.Time, note *string, hash string, sealed *string, expires time.Time) error {
+	if i.Status != InvitationAwaitingApproval {
+		return ErrInvitationNotAwaiting
+	}
+	i.Status, i.TokenHash, i.Sealed, i.ExpiresAt = InvitationPending, hash, sealed, expires
+	i.ApprovedByID, i.ApprovedAt, i.ApprovalNote = &by, &at, note
+	return nil
+}
+
+// Reject turns an offer a manager wrote down: it is withdrawn with the landlord's reason.
+func (i *Invitation) Reject(by uuid.UUID, at time.Time, note string) error {
+	if i.Status != InvitationAwaitingApproval {
+		return ErrInvitationNotAwaiting
+	}
+	i.Status, i.AnsweredAt, i.Sealed = InvitationRevoked, &at, nil
+	i.ApprovedByID, i.ApprovedAt, i.ApprovalNote = &by, &at, &note
+	return nil
+}
+
+// MaxApprovalNote is the longest reason or note of an approval.
+const MaxApprovalNote = 1000
+
 // InvitationDetail is an invitation as its landlord sees it.
 type InvitationDetail struct {
 	Invitation
@@ -173,6 +200,8 @@ var (
 	ErrInvitationInvalid = errors.New("invitation is not valid")
 	// ErrInvitationNotPending: the invitation was already answered or withdrawn.
 	ErrInvitationNotPending = errors.New("invitation is not waiting for an answer")
+	// ErrInvitationNotAwaiting: the offer is not waiting for the landlord's approval.
+	ErrInvitationNotAwaiting = errors.New("invitation is not waiting for approval")
 	// ErrInvitationLinkUnavailable: the link cannot be shown again (make a new one).
 	ErrInvitationLinkUnavailable = errors.New("invitation link cannot be shown again")
 	// ErrInvitationOwnOffer: nobody accepts their own offer.

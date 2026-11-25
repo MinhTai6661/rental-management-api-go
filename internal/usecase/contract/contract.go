@@ -36,6 +36,8 @@ type Deps struct {
 	Sealer Sealer
 	// Mailer defaults to NoInvitationMailer.
 	Mailer InvitationMailer
+	// Managers defaults to NoManagers.
+	Managers Managers
 }
 
 // Options are the settings of the use cases.
@@ -66,6 +68,7 @@ type core struct {
 	tokens      LinkTokens
 	sealer      Sealer
 	mailer      InvitationMailer
+	managers    Managers
 	opts        Options
 }
 
@@ -73,7 +76,7 @@ func newCore(d Deps, o Options) *core {
 	c := &core{
 		tx: d.Tx, contracts: d.Contracts, rooms: d.Rooms, roomState: d.RoomState, notifier: d.Notifier, audit: d.Audit,
 		plans: d.Plans, clock: d.Clock, log: d.Log, loc: o.Location,
-		invitations: d.Invitations, invitees: d.Invitees, tokens: d.Tokens, sealer: d.Sealer, mailer: d.Mailer, opts: o,
+		invitations: d.Invitations, invitees: d.Invitees, tokens: d.Tokens, sealer: d.Sealer, mailer: d.Mailer, managers: d.Managers, opts: o,
 	}
 	if c.roomState == nil {
 		c.roomState = KeepRoomStatus{}
@@ -95,6 +98,9 @@ func newCore(d Deps, o Options) *core {
 	}
 	if c.loc == nil {
 		c.loc = time.FixedZone("ICT", 7*60*60)
+	}
+	if c.managers == nil {
+		c.managers = NoManagers{}
 	}
 	if c.mailer == nil {
 		c.mailer = NoInvitationMailer{}

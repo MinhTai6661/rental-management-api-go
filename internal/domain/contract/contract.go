@@ -91,6 +91,8 @@ func (c Contract) HeldBy(userID uuid.UUID) bool { return c.TenantID != nil && *c
 type Viewer struct {
 	UserID     uuid.UUID
 	AsLandlord bool
+	// AsManager: the contracts of the rooms handed to the viewer, except the one they hold as tenant (read only).
+	AsManager bool
 }
 
 // WardRef is the ward and province of a room's address.

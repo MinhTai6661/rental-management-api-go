@@ -48,7 +48,7 @@ func (s *Invoices) Get(ctx context.Context, v domain.Viewer, id uuid.UUID) (View
 // Periods lists the started billing periods of a landlord's contract, each with its bill if any and the name and
 // transfer words a new bill of it would get when the landlord writes none.
 func (s *Invoices) Periods(ctx context.Context, landlordID, contractID uuid.UUID) ([]domain.PeriodRow, error) {
-	f, err := s.contracts.Get(ctx, landlordView(landlordID), contractID)
+	f, err := s.contracts.Get(ctx, s.actor(ctx, landlordID), contractID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -64,7 +64,7 @@ func (s *Invoices) Periods(ctx context.Context, landlordID, contractID uuid.UUID
 	for _, b := range billed {
 		byStart[b.PeriodStart] = b
 	}
-	counts, err := s.invoices.MonthCounts(ctx, landlordID, periods[0].Start, periods[len(periods)-1].Start)
+	counts, err := s.invoices.MonthCounts(ctx, f.LandlordID, periods[0].Start, periods[len(periods)-1].Start)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *Invoices) Periods(ctx context.Context, landlordID, contractID uuid.UUID
 
 // Preview shows what a new bill of the contract would look like, without saving anything.
 func (s *Invoices) Preview(ctx context.Context, landlordID, contractID uuid.UUID, in PreviewInput) (domain.Preview, error) {
-	f, err := s.contracts.Get(ctx, landlordView(landlordID), contractID)
+	f, err := s.contracts.Get(ctx, s.actor(ctx, landlordID), contractID)
 	if err != nil {
 		return domain.Preview{}, notFound(err)
 	}
@@ -110,7 +110,11 @@ func (s *Invoices) Preview(ctx context.Context, landlordID, contractID uuid.UUID
 // MeterHistory returns the meter readings of one of the landlord's rooms, newest first (one meter when chargeID is
 // set). domain.ErrNotFound for a room that is not theirs.
 func (s *Invoices) MeterHistory(ctx context.Context, landlordID, roomID uuid.UUID, chargeID *uuid.UUID, limit, offset int) (ReadingPage, error) {
-	if _, err := s.charges.RoomOf(ctx, landlordID, roomID); err != nil {
+	if v := s.actor(ctx, landlordID); v.AsManager {
+		if _, err := s.grantOn(ctx, v, roomID); err != nil {
+			return ReadingPage{}, err
+		}
+	} else if _, err := s.charges.RoomOf(ctx, landlordID, roomID); err != nil {
 		return ReadingPage{}, notFound(err)
 	}
 	items, total, err := s.invoices.ReadingHistory(ctx, roomID, chargeID, limit, offset)

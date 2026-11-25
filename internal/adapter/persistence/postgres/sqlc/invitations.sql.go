@@ -34,24 +34,27 @@ func (q *Queries) CountContractInvitationInbox(ctx context.Context, arg CountCon
 const countContractInvitations = `-- name: CountContractInvitations :one
 SELECT count(*)::integer
 FROM contract_invitations i
-WHERE i.landlord_id = $1
-  AND ($2::text IS NULL OR i.status = $2::text)
+WHERE ($1::uuid IS NULL OR i.landlord_id = $1::uuid)
+  AND ($2::uuid IS NULL OR (i.created_by_id = $2::uuid AND EXISTS (
+        SELECT 1 FROM room_managers rm WHERE rm.room_id = i.room_id AND rm.manager_id = $2::uuid AND rm.status = 'active')))
+  AND ($3::text IS NULL OR i.status = $3::text)
 `
 
 type CountContractInvitationsParams struct {
-	LandlordID uuid.UUID
+	LandlordID *uuid.UUID
+	AuthorID   *uuid.UUID
 	Status     *string
 }
 
 func (q *Queries) CountContractInvitations(ctx context.Context, arg CountContractInvitationsParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countContractInvitations, arg.LandlordID, arg.Status)
+	row := q.db.QueryRow(ctx, countContractInvitations, arg.LandlordID, arg.AuthorID, arg.Status)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
 const findContractInvitationByTokenHash = `-- name: FindContractInvitationByTokenHash :one
-SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at FROM contract_invitations WHERE token_hash = $1
+SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at, approved_by_id, approved_at, approval_note FROM contract_invitations WHERE token_hash = $1
 `
 
 // The invitation a link opens (any status: the use case decides what can still be done with it).
@@ -81,12 +84,15 @@ func (q *Queries) FindContractInvitationByTokenHash(ctx context.Context, tokenHa
 		&i.ContractID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ApprovedByID,
+		&i.ApprovedAt,
+		&i.ApprovalNote,
 	)
 	return i, err
 }
 
 const findContractInvitationForRecipient = `-- name: FindContractInvitationForRecipient :one
-SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at FROM contract_invitations WHERE id = $1 AND recipient_id = $2
+SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at, approved_by_id, approved_at, approval_note FROM contract_invitations WHERE id = $1 AND recipient_id = $2
 `
 
 type FindContractInvitationForRecipientParams struct {
@@ -122,12 +128,15 @@ func (q *Queries) FindContractInvitationForRecipient(ctx context.Context, arg Fi
 		&i.ContractID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ApprovedByID,
+		&i.ApprovedAt,
+		&i.ApprovalNote,
 	)
 	return i, err
 }
 
 const getContractInvitationOffer = `-- name: GetContractInvitationOffer :one
-SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at,
+SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at, i.approved_by_id, i.approved_at, i.approval_note,
        r.name AS room_name, r.status AS room_status, r.price_vnd AS room_price_vnd,
        r.minimum_rental_period AS room_minimum_rental_period, r.rental_period_unit AS room_rental_period_unit,
        r.address_detail AS room_address_detail, r.description AS room_description,
@@ -193,6 +202,9 @@ func (q *Queries) GetContractInvitationOffer(ctx context.Context, id uuid.UUID) 
 		&i.ContractInvitation.ContractID,
 		&i.ContractInvitation.CreatedAt,
 		&i.ContractInvitation.UpdatedAt,
+		&i.ContractInvitation.ApprovedByID,
+		&i.ContractInvitation.ApprovedAt,
+		&i.ContractInvitation.ApprovalNote,
 		&i.RoomName,
 		&i.RoomStatus,
 		&i.RoomPriceVnd,
@@ -268,7 +280,7 @@ func (q *Queries) InsertContractInvitation(ctx context.Context, arg InsertContra
 }
 
 const listContractInvitationInbox = `-- name: ListContractInvitationInbox :many
-SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at,
+SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at, i.approved_by_id, i.approved_at, i.approval_note,
        r.name AS room_name, r.status AS room_status, r.price_vnd AS room_price_vnd,
        r.minimum_rental_period AS room_minimum_rental_period, r.rental_period_unit AS room_rental_period_unit,
        r.address_detail AS room_address_detail, r.description AS room_description,
@@ -354,6 +366,9 @@ func (q *Queries) ListContractInvitationInbox(ctx context.Context, arg ListContr
 			&i.ContractInvitation.ContractID,
 			&i.ContractInvitation.CreatedAt,
 			&i.ContractInvitation.UpdatedAt,
+			&i.ContractInvitation.ApprovedByID,
+			&i.ContractInvitation.ApprovedAt,
+			&i.ContractInvitation.ApprovalNote,
 			&i.RoomName,
 			&i.RoomStatus,
 			&i.RoomPriceVnd,
@@ -383,7 +398,7 @@ func (q *Queries) ListContractInvitationInbox(ctx context.Context, arg ListContr
 }
 
 const lockContractInvitation = `-- name: LockContractInvitation :one
-SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at FROM contract_invitations WHERE id = $1 FOR UPDATE
+SELECT id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at, approved_by_id, approved_at, approval_note FROM contract_invitations WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockContractInvitation(ctx context.Context, id uuid.UUID) (ContractInvitation, error) {
@@ -412,15 +427,77 @@ func (q *Queries) LockContractInvitation(ctx context.Context, id uuid.UUID) (Con
 		&i.ContractID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ApprovedByID,
+		&i.ApprovedAt,
+		&i.ApprovalNote,
 	)
 	return i, err
+}
+
+const revokeAwaitingContractInvitationsOfAuthor = `-- name: RevokeAwaitingContractInvitationsOfAuthor :many
+UPDATE contract_invitations
+SET status = 'revoked', link_token_sealed = NULL, answered_at = $1, updated_at = now()
+WHERE created_by_id = $2 AND status = 'awaiting_approval'
+RETURNING id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at, approved_by_id, approved_at, approval_note
+`
+
+type RevokeAwaitingContractInvitationsOfAuthorParams struct {
+	At       *time.Time
+	AuthorID *uuid.UUID
+}
+
+// Withdraws the offers a manager wrote that still wait for the landlord (the manager lost their rooms).
+func (q *Queries) RevokeAwaitingContractInvitationsOfAuthor(ctx context.Context, arg RevokeAwaitingContractInvitationsOfAuthorParams) ([]ContractInvitation, error) {
+	rows, err := q.db.Query(ctx, revokeAwaitingContractInvitationsOfAuthor, arg.At, arg.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ContractInvitation
+	for rows.Next() {
+		var i ContractInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.LandlordID,
+			&i.CreatedByID,
+			&i.Status,
+			&i.TokenHash,
+			&i.LinkTokenSealed,
+			&i.ExpiresAt,
+			&i.PriceVnd,
+			&i.DepositVnd,
+			&i.OccupantCount,
+			&i.StartsOn,
+			&i.EndsOn,
+			&i.ContractStatus,
+			&i.Note,
+			&i.RecipientID,
+			&i.RecipientEmail,
+			&i.AnsweredByID,
+			&i.AnsweredAt,
+			&i.ContractID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ApprovedByID,
+			&i.ApprovedAt,
+			&i.ApprovalNote,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const revokeOpenContractInvitationsOfRooms = `-- name: RevokeOpenContractInvitationsOfRooms :many
 UPDATE contract_invitations
 SET status = 'revoked', link_token_sealed = NULL, answered_at = $1, updated_at = now()
 WHERE room_id = ANY($2::uuid[]) AND status IN ('pending', 'awaiting_approval')
-RETURNING id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at
+RETURNING id, room_id, landlord_id, created_by_id, status, token_hash, link_token_sealed, expires_at, price_vnd, deposit_vnd, occupant_count, starts_on, ends_on, contract_status, note, recipient_id, recipient_email, answered_by_id, answered_at, contract_id, created_at, updated_at, approved_by_id, approved_at, approval_note
 `
 
 type RevokeOpenContractInvitationsOfRoomsParams struct {
@@ -461,6 +538,9 @@ func (q *Queries) RevokeOpenContractInvitationsOfRooms(ctx context.Context, arg 
 			&i.ContractID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ApprovedByID,
+			&i.ApprovedAt,
+			&i.ApprovalNote,
 		); err != nil {
 			return nil, err
 		}
@@ -475,8 +555,9 @@ func (q *Queries) RevokeOpenContractInvitationsOfRooms(ctx context.Context, arg 
 const saveContractInvitation = `-- name: SaveContractInvitation :exec
 UPDATE contract_invitations
 SET status = $1, token_hash = $2, link_token_sealed = $3, expires_at = $4,
-    answered_by_id = $5, answered_at = $6, contract_id = $7, updated_at = now()
-WHERE id = $8
+    answered_by_id = $5, answered_at = $6, contract_id = $7,
+    approved_by_id = $8, approved_at = $9, approval_note = $10, updated_at = now()
+WHERE id = $11
 `
 
 type SaveContractInvitationParams struct {
@@ -487,6 +568,9 @@ type SaveContractInvitationParams struct {
 	AnsweredByID    *uuid.UUID
 	AnsweredAt      *time.Time
 	ContractID      *uuid.UUID
+	ApprovedByID    *uuid.UUID
+	ApprovedAt      *time.Time
+	ApprovalNote    *string
 	ID              uuid.UUID
 }
 
@@ -500,13 +584,16 @@ func (q *Queries) SaveContractInvitation(ctx context.Context, arg SaveContractIn
 		arg.AnsweredByID,
 		arg.AnsweredAt,
 		arg.ContractID,
+		arg.ApprovedByID,
+		arg.ApprovedAt,
+		arg.ApprovalNote,
 		arg.ID,
 	)
 	return err
 }
 
 const searchContractInvitations = `-- name: SearchContractInvitations :many
-SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at,
+SELECT i.id, i.room_id, i.landlord_id, i.created_by_id, i.status, i.token_hash, i.link_token_sealed, i.expires_at, i.price_vnd, i.deposit_vnd, i.occupant_count, i.starts_on, i.ends_on, i.contract_status, i.note, i.recipient_id, i.recipient_email, i.answered_by_id, i.answered_at, i.contract_id, i.created_at, i.updated_at, i.approved_by_id, i.approved_at, i.approval_note,
        r.name AS room_name, b.name AS building_name, l.full_name AS landlord_name,
        rc.full_name AS recipient_full_name, rc.email AS recipient_account_email,
        ab.full_name AS answered_by_full_name, ab.email AS answered_by_email
@@ -516,15 +603,20 @@ JOIN users l ON l.id = i.landlord_id
 LEFT JOIN buildings b ON b.id = r.building_id
 LEFT JOIN users rc ON rc.id = i.recipient_id
 LEFT JOIN users ab ON ab.id = i.answered_by_id
-WHERE i.landlord_id = $1
-  AND ($2::uuid IS NULL OR i.id = $2::uuid)
-  AND ($3::text IS NULL OR i.status = $3::text)
+WHERE ($1::uuid IS NULL OR i.landlord_id = $1::uuid)
+  -- A manager sees only what they wrote, and only while they still manage the room (the repository sets exactly one
+  -- of landlord_id and author_id).
+  AND ($2::uuid IS NULL OR (i.created_by_id = $2::uuid AND EXISTS (
+        SELECT 1 FROM room_managers rm WHERE rm.room_id = i.room_id AND rm.manager_id = $2::uuid AND rm.status = 'active')))
+  AND ($3::uuid IS NULL OR i.id = $3::uuid)
+  AND ($4::text IS NULL OR i.status = $4::text)
 ORDER BY CASE i.status WHEN 'awaiting_approval' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, i.created_at DESC, i.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type SearchContractInvitationsParams struct {
-	LandlordID uuid.UUID
+	LandlordID *uuid.UUID
+	AuthorID   *uuid.UUID
 	ID         *uuid.UUID
 	Status     *string
 	PageOffset int32
@@ -547,6 +639,7 @@ type SearchContractInvitationsRow struct {
 func (q *Queries) SearchContractInvitations(ctx context.Context, arg SearchContractInvitationsParams) ([]SearchContractInvitationsRow, error) {
 	rows, err := q.db.Query(ctx, searchContractInvitations,
 		arg.LandlordID,
+		arg.AuthorID,
 		arg.ID,
 		arg.Status,
 		arg.PageOffset,
@@ -582,6 +675,9 @@ func (q *Queries) SearchContractInvitations(ctx context.Context, arg SearchContr
 			&i.ContractInvitation.ContractID,
 			&i.ContractInvitation.CreatedAt,
 			&i.ContractInvitation.UpdatedAt,
+			&i.ContractInvitation.ApprovedByID,
+			&i.ContractInvitation.ApprovedAt,
+			&i.ContractInvitation.ApprovalNote,
 			&i.RoomName,
 			&i.BuildingName,
 			&i.LandlordName,

@@ -29,6 +29,7 @@ import (
 	invoicehttp "rental-management/internal/adapter/http/invoice"
 	listinghttp "rental-management/internal/adapter/http/listing"
 	locationhttp "rental-management/internal/adapter/http/location"
+	managerhttp "rental-management/internal/adapter/http/manager"
 	notificationhttp "rental-management/internal/adapter/http/notification"
 	paymenthttp "rental-management/internal/adapter/http/payment"
 	planhttp "rental-management/internal/adapter/http/plan"
@@ -53,6 +54,7 @@ import (
 	invoiceuc "rental-management/internal/usecase/invoice"
 	listinguc "rental-management/internal/usecase/listing"
 	locationuc "rental-management/internal/usecase/location"
+	manageruc "rental-management/internal/usecase/manager"
 	notificationuc "rental-management/internal/usecase/notification"
 	planuc "rental-management/internal/usecase/plan"
 	propertyuc "rental-management/internal/usecase/property"
@@ -144,11 +146,17 @@ func runAPI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	invitationMail := mailadapter.NewInvitationMailer(mailer, renderer, invitees.OptOutURL)
+	grants := &contractManagers{} // what a manager may do with offers; the manager use cases below set it
 	rentals := newContracts(cfg, log, pool, pricing, invitationPorts{
-		invitees: invitees, sealer: sealer, mailer: invitationMailer{m: mailadapter.NewInvitationMailer(mailer, renderer, invitees.OptOutURL)},
+		invitees: invitees, sealer: sealer, mailer: invitationMailer{m: invitationMail}, managers: grants,
 	}, inbox.deliveries)
+	handovers := newManagers(cfg, log, pool, managerPorts{
+		invitees: invitees, sealer: sealer, mailer: managerMailer{m: invitationMail}, notify: inbox.deliveries, offers: rentals.managerLinks,
+	})
+	grants.access = handovers.access
 	properties := newProperty(cfg, log, pool, files, rentals, offers, pricing)
-	billing, err := newInvoices(cfg, log, pool, pricing, sealer, inbox.deliveries)
+	billing, err := newInvoices(cfg, log, pool, pricing, sealer, inbox.deliveries, invoiceManagers{access: handovers.access, people: invitees})
 	if err != nil {
 		return err
 	}
@@ -193,6 +201,12 @@ func runAPI(ctx context.Context) error {
 						contracthttp.NewRentalHandler(rentals.rentals, files),
 						contracthttp.NewInvitationHandler(rentals.invitations, rentals.answers, contractuc.ClockFunc(time.Now), files, httpx.NewBinder()),
 						authenticator, limiter)
+				},
+				func(v1 *gin.RouterGroup) {
+					binder := httpx.NewBinder()
+					managerhttp.MountManagers(v1,
+						managerhttp.NewInvitationHandler(handovers.invitations, handovers.answers, manageruc.ClockFunc(time.Now), binder),
+						managerhttp.NewAssignmentHandler(handovers.assignments, handovers.managed, binder), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
 					binder := httpx.NewBinder()
@@ -421,7 +435,7 @@ func newInvitees(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*invi
 // secrets of share links are encrypted with the sealer, the payment ledger is the payment use cases' (see
 // bridges_payment.go; newPayments gives it its file store), the messages go through n (nil: nobody is told), and the
 // audit and mail ports keep their no-op defaults until those contexts exist.
-func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, sealer *secretbox.Box, n *notificationuc.Deliveries) (invoices, error) {
+func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plans, sealer *secretbox.Box, n *notificationuc.Deliveries, managers ...invoiceuc.Managers) (invoices, error) {
 	ledger := newPaymentLedger(cfg, log, pool)
 	deps := invoiceuc.Deps{
 		Tx: postgres.NewTxManager(pool), Invoices: invoicepg.NewInvoiceRepository(pool), Contracts: invoicepg.NewContractReader(pool),
@@ -430,6 +444,10 @@ func newInvoices(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p plan
 	}
 	if n != nil {
 		deps.Notifier = invoiceNotifier{m: n}
+	}
+	if len(managers) > 0 && managers[0] != nil {
+		// What a hand-over allows counts only for a request made in the manager role.
+		deps.Managers, deps.Acting = managers[0], managerActing{}
 	}
 	opts := invoiceuc.Options{
 		DueDays: cfg.InvoiceDueDays, ShareTTL: time.Duration(cfg.InvoiceShareTTLDays) * 24 * time.Hour,
@@ -450,6 +468,8 @@ type contracts struct {
 	links       *contractuc.RoomLinks
 	seeder      *contractuc.Seeder
 	rooms       *roomStatus
+	// managerLinks withdraws the offers a manager wrote when they lose every room (the manager context calls it).
+	managerLinks *contractuc.ManagerLinks
 }
 
 // invitationPorts is what the contract invitations need from outside the contract context: who can be invited, the box
@@ -458,6 +478,8 @@ type invitationPorts struct {
 	invitees *invitationuc.Invitees
 	sealer   *secretbox.Box
 	mailer   contractuc.InvitationMailer
+	// managers tells what a manager was given on a room; nil means nobody manages anything.
+	managers contractuc.Managers
 }
 
 // newContracts builds the contract use cases on Postgres. The room status goes through property's use case, which is
@@ -473,6 +495,9 @@ func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p pla
 		Invitations: contractpg.NewInvitationRepository(pool), Invitees: inv.invitees, Tokens: security.ShareTokens{},
 		Sealer: inv.sealer, Mailer: inv.mailer, Audit: contractAudit{r: newAuditRecorder(log, pool)},
 	}
+	if inv.managers != nil {
+		deps.Managers = inv.managers
+	}
 	if n != nil {
 		deps.Notifier = contractNotifier{m: n}
 	}
@@ -480,7 +505,7 @@ func newContracts(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool, p pla
 	return contracts{
 		contracts: contractuc.NewContracts(deps, opts), rentals: contractuc.NewRentals(deps, opts),
 		invitations: contractuc.NewInvitations(deps, opts), answers: contractuc.NewInvitationAnswers(deps, opts), links: contractuc.NewRoomLinks(deps, opts),
-		seeder: contractuc.NewSeeder(deps, opts, reader), rooms: status,
+		seeder: contractuc.NewSeeder(deps, opts, reader), rooms: status, managerLinks: contractuc.NewManagerLinks(deps, opts),
 	}
 }
 

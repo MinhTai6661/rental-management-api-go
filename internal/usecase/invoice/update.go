@@ -16,7 +16,7 @@ func (s *Invoices) editable(ctx context.Context, landlordID, id uuid.UUID, lock 
 	if lock {
 		get = s.invoices.ForUpdate
 	}
-	d, err := get(ctx, landlordView(landlordID), id)
+	d, err := get(ctx, s.actor(ctx, landlordID), id)
 	if err != nil {
 		return domain.Detail{}, notFound(err)
 	}
@@ -107,10 +107,11 @@ func (s *Invoices) Update(ctx context.Context, landlordID, id uuid.UUID, in Upda
 		break
 	}
 	// What the person is told comes after the correction is stored.
-	fresh, err := s.invoices.Get(ctx, landlordView(landlordID), id)
+	fresh, err := s.invoices.Get(ctx, s.actor(ctx, landlordID), id)
 	if err != nil {
 		return View{}, notFound(err)
 	}
+	s.tellLandlord(ctx, s.actor(ctx, landlordID), fresh, NotifyManagerBillEdited)
 	// A draft is emailed when it is sent, not before.
 	if fresh.Status == domain.StatusSent {
 		if in.ResendEmail {
@@ -118,7 +119,7 @@ func (s *Invoices) Update(ctx context.Context, landlordID, id uuid.UUID, in Upda
 		}
 		s.notifyTenant(ctx, fresh, NotifyInvoiceUpdated)
 	}
-	return s.view(ctx, landlordView(landlordID), fresh)
+	return s.view(ctx, s.actor(ctx, landlordID), fresh)
 }
 
 // Delete removes a bill made by mistake, with the meter readings it recorded, so the period can be billed again and
@@ -128,6 +129,10 @@ func (s *Invoices) Delete(ctx context.Context, landlordID, id uuid.UUID) error {
 		d, err := s.editable(ctx, landlordID, id, true)
 		if err != nil {
 			return err
+		}
+		// A manager removes only a draft they wrote themselves.
+		if v := s.actor(ctx, landlordID); v.AsManager && !domain.ManagerAbilities(v, d.Status, domain.Totals{}, d.CreatedByID, false).Delete {
+			return domain.ErrForbidden
 		}
 		// Only rejected payments can be left: the ledger takes them away with the bill.
 		if err := s.ledger.Purge(ctx, id); err != nil {

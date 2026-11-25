@@ -112,18 +112,21 @@ LEFT JOIN users t ON t.id = c.tenant_id
 WHERE c.deleted_at IS NULL
   AND (NOT $1::boolean
        OR ($2::boolean AND c.landlord_id = $3 AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT $2::boolean AND c.tenant_id = $3))
-  AND (NOT $4::boolean OR (c.status = 'active' AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL))
-  AND ($5::uuid IS NULL OR c.id = $5::uuid)
-  AND c.id > $6
+       OR ($4::boolean AND c.tenant_id IS DISTINCT FROM $3 AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = $3 AND rm.status = 'active'))
+       OR (NOT $2::boolean AND NOT $4::boolean AND c.tenant_id = $3))
+  AND (NOT $5::boolean OR (c.status = 'active' AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL))
+  AND ($6::uuid IS NULL OR c.id = $6::uuid)
+  AND c.id > $7
 ORDER BY c.id
-LIMIT $7
+LIMIT $8
 `
 
 type SearchContractFactsForBillingParams struct {
 	Scoped      bool
 	AsLandlord  bool
 	ViewerID    uuid.UUID
+	AsManager   bool
 	RunningOnly bool
 	ID          *uuid.UUID
 	AfterID     uuid.UUID
@@ -157,6 +160,7 @@ func (q *Queries) SearchContractFactsForBilling(ctx context.Context, arg SearchC
 		arg.Scoped,
 		arg.AsLandlord,
 		arg.ViewerID,
+		arg.AsManager,
 		arg.RunningOnly,
 		arg.ID,
 		arg.AfterID,

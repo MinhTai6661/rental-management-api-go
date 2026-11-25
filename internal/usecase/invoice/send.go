@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
@@ -14,7 +15,7 @@ import (
 func (s *Invoices) Send(ctx context.Context, landlordID, id uuid.UUID, delivery *domain.Delivery) (View, error) {
 	var wasDraft bool
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		d, err := s.invoices.ForUpdate(ctx, landlordView(landlordID), id)
+		d, err := s.invoices.ForUpdate(ctx, s.actor(ctx, landlordID), id)
 		if err != nil {
 			return notFound(err)
 		}
@@ -45,15 +46,16 @@ func (s *Invoices) Send(ctx context.Context, landlordID, id uuid.UUID, delivery 
 	if err != nil {
 		return View{}, err
 	}
-	d, err := s.invoices.Get(ctx, landlordView(landlordID), id)
+	d, err := s.invoices.Get(ctx, s.actor(ctx, landlordID), id)
 	if err != nil {
 		return View{}, notFound(err)
 	}
+	s.tellLandlord(ctx, s.actor(ctx, landlordID), d, NotifyManagerBillSent)
 	s.mail(ctx, d)
 	if wasDraft {
 		s.notifyTenant(ctx, d, NotifyInvoiceSent)
 	}
-	return s.view(ctx, landlordView(landlordID), d)
+	return s.view(ctx, s.actor(ctx, landlordID), d)
 }
 
 // SetStatus moves a bill between unpaid (sent) and paid, as a landlord does when money arrives or was entered by
@@ -62,16 +64,21 @@ func (s *Invoices) Send(ctx context.Context, landlordID, id uuid.UUID, delivery 
 // review is refused (domain.ErrReviewPendingFirst).
 func (s *Invoices) SetStatus(ctx context.Context, landlordID, id uuid.UUID, to domain.Status) (View, error) {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		d, err := s.invoices.ForUpdate(ctx, landlordView(landlordID), id)
+		d, err := s.invoices.ForUpdate(ctx, s.actor(ctx, landlordID), id)
 		if err != nil {
 			return notFound(err)
+		}
+		if v := s.actor(ctx, landlordID); v.AsManager {
+			if g, err := s.grantOn(ctx, v, d.Contract.RoomID); err != nil || !g.Settle {
+				return errors.Join(err, domain.ErrForbidden)
+			}
 		}
 		return s.applyStatus(ctx, &d, to, landlordID)
 	})
 	if err != nil {
 		return View{}, err
 	}
-	return s.Get(ctx, landlordView(landlordID), id)
+	return s.Get(ctx, s.actor(ctx, landlordID), id)
 }
 
 // applyStatus changes the payment status of a locked bill inside the caller's transaction.

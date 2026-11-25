@@ -11,6 +11,7 @@ import (
 	contractuc "rental-management/internal/usecase/contract"
 	invoiceuc "rental-management/internal/usecase/invoice"
 	listinguc "rental-management/internal/usecase/listing"
+	manageruc "rental-management/internal/usecase/manager"
 	notificationuc "rental-management/internal/usecase/notification"
 	paymentuc "rental-management/internal/usecase/payment"
 	planuc "rental-management/internal/usecase/plan"
@@ -24,10 +25,12 @@ func TestEveryKindAContextSendsIsInTheCatalog(t *testing.T) {
 		contractuc.NotifyRegistrationConfirmed, contractuc.NotifyRegistrationApproved, contractuc.NotifyRegistrationRejected,
 		contractuc.NotifyCancellationRequested, contractuc.NotifyCancellationDeclined, contractuc.NotifyContractEnded,
 		contractuc.NotifyInvitationReceived, contractuc.NotifyInvitationAccepted, contractuc.NotifyInvitationDeclined,
+		contractuc.NotifyInvitationNeedsApproval, contractuc.NotifyInvitationApproved, contractuc.NotifyInvitationRejected,
+		manageruc.NotifyInvitationReceived, manageruc.NotifyInvitationWithdrawn, manageruc.NotifyAccepted, manageruc.NotifyDeclined, manageruc.NotifyRevoked,
 		planuc.NotifySubscriptionRequested, planuc.NotifySubscriptionActivated,
 		listinguc.NotifySubmitted, listinguc.NotifyApproved, listinguc.NotifyRejected, listinguc.NotifyTakenDown,
 		invoiceuc.NotifyInvoiceSent, invoiceuc.NotifyInvoiceUpdated, invoiceuc.NotifyInvoiceDueSoon, invoiceuc.NotifyInvoiceOverdue,
-		invoiceuc.NotifyTenantInvoiceOverdue,
+		invoiceuc.NotifyTenantInvoiceOverdue, invoiceuc.NotifyManagerBillSent, invoiceuc.NotifyManagerBillEdited,
 		adminuc.NotifyApplicationReceived, adminuc.NotifyApplicationApproved, adminuc.NotifyApplicationRejected, adminuc.NotifyLandlordRevoked,
 		paymentuc.NotifyPaymentSubmitted, paymentuc.NotifyPaymentConfirmed, paymentuc.NotifyPaymentRejected,
 	}
@@ -71,6 +74,9 @@ func TestNotifierAdaptersMapEveryField(t *testing.T) {
 		},
 		"plan": func(m messenger) error {
 			return planNotifier{m}.Notify(ctx, planuc.Notification{UserID: user, Kind: "x_kind", Params: params, URL: "/u", Audience: "tenant"})
+		},
+		"manager": func(m messenger) error {
+			return managerNotifier{m}.Notify(ctx, manageruc.Notification{UserID: user, Kind: "x_kind", Params: params, URL: "/u", Audience: "tenant"})
 		},
 		"listing": func(m messenger) error {
 			return listingNotifier{m}.Notify(ctx, listinguc.Notification{UserID: user, Kind: "x_kind", Params: params, URL: "/u", Audience: "tenant"})

@@ -20,7 +20,11 @@ JOIN users l ON l.id = i.landlord_id
 LEFT JOIN buildings b ON b.id = r.building_id
 LEFT JOIN users rc ON rc.id = i.recipient_id
 LEFT JOIN users ab ON ab.id = i.answered_by_id
-WHERE i.landlord_id = @landlord_id
+WHERE (sqlc.narg('landlord_id')::uuid IS NULL OR i.landlord_id = sqlc.narg('landlord_id')::uuid)
+  -- A manager sees only what they wrote, and only while they still manage the room (the repository sets exactly one
+  -- of landlord_id and author_id).
+  AND (sqlc.narg('author_id')::uuid IS NULL OR (i.created_by_id = sqlc.narg('author_id')::uuid AND EXISTS (
+        SELECT 1 FROM room_managers rm WHERE rm.room_id = i.room_id AND rm.manager_id = sqlc.narg('author_id')::uuid AND rm.status = 'active')))
   AND (sqlc.narg('id')::uuid IS NULL OR i.id = sqlc.narg('id')::uuid)
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status')::text)
 ORDER BY CASE i.status WHEN 'awaiting_approval' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, i.created_at DESC, i.id DESC
@@ -29,7 +33,9 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountContractInvitations :one
 SELECT count(*)::integer
 FROM contract_invitations i
-WHERE i.landlord_id = @landlord_id
+WHERE (sqlc.narg('landlord_id')::uuid IS NULL OR i.landlord_id = sqlc.narg('landlord_id')::uuid)
+  AND (sqlc.narg('author_id')::uuid IS NULL OR (i.created_by_id = sqlc.narg('author_id')::uuid AND EXISTS (
+        SELECT 1 FROM room_managers rm WHERE rm.room_id = i.room_id AND rm.manager_id = sqlc.narg('author_id')::uuid AND rm.status = 'active')))
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status')::text);
 
 -- name: LockContractInvitation :one
@@ -39,7 +45,8 @@ SELECT * FROM contract_invitations WHERE id = @id FOR UPDATE;
 -- The fields an invitation's life changes: its answer, its link secret and its end.
 UPDATE contract_invitations
 SET status = @status, token_hash = @token_hash, link_token_sealed = @link_token_sealed, expires_at = @expires_at,
-    answered_by_id = @answered_by_id, answered_at = @answered_at, contract_id = @contract_id, updated_at = now()
+    answered_by_id = @answered_by_id, answered_at = @answered_at, contract_id = @contract_id,
+    approved_by_id = @approved_by_id, approved_at = @approved_at, approval_note = @approval_note, updated_at = now()
 WHERE id = @id;
 
 -- name: FindContractInvitationByTokenHash :one
@@ -102,4 +109,11 @@ WHERE i.recipient_id = @recipient_id AND i.status = 'pending' AND i.expires_at >
 UPDATE contract_invitations
 SET status = 'revoked', link_token_sealed = NULL, answered_at = @at, updated_at = now()
 WHERE room_id = ANY(@room_ids::uuid[]) AND status IN ('pending', 'awaiting_approval')
+RETURNING *;
+
+-- name: RevokeAwaitingContractInvitationsOfAuthor :many
+-- Withdraws the offers a manager wrote that still wait for the landlord (the manager lost their rooms).
+UPDATE contract_invitations
+SET status = 'revoked', link_token_sealed = NULL, answered_at = @at, updated_at = now()
+WHERE created_by_id = @author_id AND status = 'awaiting_approval'
 RETURNING *;

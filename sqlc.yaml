@@ -17,6 +17,7 @@ sql:
       - db/queries/notification
       - db/queries/admin
       - db/queries/audit
+      - db/queries/manager
     gen:
       go:
         package: sqlc

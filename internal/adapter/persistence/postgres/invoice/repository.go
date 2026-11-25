@@ -27,7 +27,7 @@ func NewInvoiceRepository(pool *pgxpool.Pool) *InvoiceRepository {
 // Get returns a bill as the viewer sees it, or shared.ErrNotFound.
 func (r *InvoiceRepository) Get(ctx context.Context, v domain.Viewer, id uuid.UUID) (domain.Detail, error) {
 	rows, err := postgres.Queries(ctx, r.pool).SearchInvoices(ctx, sqlcgen.SearchInvoicesParams{
-		Scoped: true, AsLandlord: v.AsLandlord, ViewerID: v.UserID, ID: &id, PageLimit: 1,
+		Scoped: true, AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, ID: &id, PageLimit: 1,
 	})
 	if err != nil {
 		return domain.Detail{}, postgres.Translate(err)
@@ -37,7 +37,7 @@ func (r *InvoiceRepository) Get(ctx context.Context, v domain.Viewer, id uuid.UU
 
 // ForUpdate is Get and locks the bill until the transaction ends.
 func (r *InvoiceRepository) ForUpdate(ctx context.Context, v domain.Viewer, id uuid.UUID) (domain.Detail, error) {
-	if _, err := postgres.Queries(ctx, r.pool).LockInvoice(ctx, sqlcgen.LockInvoiceParams{ID: id, AsLandlord: v.AsLandlord, ViewerID: v.UserID}); err != nil {
+	if _, err := postgres.Queries(ctx, r.pool).LockInvoice(ctx, sqlcgen.LockInvoiceParams{ID: id, AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID}); err != nil {
 		return domain.Detail{}, postgres.Translate(err)
 	}
 	return r.Get(ctx, v, id)
@@ -67,13 +67,13 @@ func (r *InvoiceRepository) one(ctx context.Context, rows []sqlcgen.SearchInvoic
 func (r *InvoiceRepository) List(ctx context.Context, v domain.Viewer, contractID uuid.UUID, limit, offset int) ([]domain.Detail, int, error) {
 	q := postgres.Queries(ctx, r.pool)
 	rows, err := q.SearchInvoices(ctx, sqlcgen.SearchInvoicesParams{
-		Scoped: true, AsLandlord: v.AsLandlord, ViewerID: v.UserID, ContractID: &contractID,
+		Scoped: true, AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, ContractID: &contractID,
 		PageLimit: int32(limit), PageOffset: int32(offset), //nolint:gosec // bounded by the use case
 	})
 	if err != nil {
 		return nil, 0, postgres.Translate(err)
 	}
-	total, err := q.CountInvoices(ctx, sqlcgen.CountInvoicesParams{AsLandlord: v.AsLandlord, ViewerID: v.UserID, ContractID: contractID})
+	total, err := q.CountInvoices(ctx, sqlcgen.CountInvoicesParams{AsLandlord: v.AsLandlord, AsManager: v.AsManager, ViewerID: v.UserID, ContractID: contractID})
 	if err != nil {
 		return nil, 0, postgres.Translate(err)
 	}

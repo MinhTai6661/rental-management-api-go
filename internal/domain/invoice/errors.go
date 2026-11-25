@@ -16,6 +16,8 @@ var (
 	ErrAlreadyPaid = errors.New("invoice is already paid")
 	// ErrSendFirst: a draft cannot change its payment status; it has to be sent first (or settled directly).
 	ErrSendFirst = errors.New("send the invoice before changing its payment status")
+	// ErrForbidden: the caller sees the bill but may not do this to it (a manager without the right).
+	ErrForbidden = errors.New("not allowed to do this with the invoice")
 	// ErrLocked: a bill that is paid, or that somebody paid or is paying, cannot be corrected or removed.
 	ErrLocked = errors.New("invoice can no longer be changed")
 	// ErrReviewPendingFirst: a payment still waits for the landlord's check, so the bill cannot be marked paid.

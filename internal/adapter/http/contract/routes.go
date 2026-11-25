@@ -19,6 +19,8 @@ func MountContracts(v1 *gin.RouterGroup, h *ContractHandler, r *RentalHandler, i
 	both := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleTenant))
 	landlord := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord))
 	tenant := v1.Group("", signedIn, httpx.RequireRole(authz.RoleTenant))
+	// A manager writes offers for the rooms handed to them (the use case checks the room); the landlord answers them.
+	inviter := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleManager))
 	register := httpx.RateLimit(limiter, "contract-register", 30, time.Hour)
 	// Making an invitation and making a new link share one allowance.
 	issue := httpx.RateLimitPerUser(limiter, "contract-invitation-create", 30, time.Hour)
@@ -27,8 +29,10 @@ func MountContracts(v1 *gin.RouterGroup, h *ContractHandler, r *RentalHandler, i
 	answer := httpx.RateLimitPerUser(limiter, "contract-invitation-answer", 20, time.Minute)
 
 	// A landlord sees the contracts on their rooms, a tenant their own.
-	both.GET("/contracts", can("contracts.view"), h.List)
-	both.GET("/contracts/:id", can("contracts.view"), h.Get)
+	// A manager reads the contracts of the rooms handed to them (never the one they hold as tenant) and changes none.
+	readers := v1.Group("", signedIn, httpx.RequireRole(authz.RoleLandlord, authz.RoleManager, authz.RoleTenant))
+	readers.GET("/contracts", can("contracts.view"), h.List)
+	readers.GET("/contracts/:id", can("contracts.view"), h.Get)
 	// A landlord removes any of their contracts; a tenant only withdraws a registration that still waits.
 	both.DELETE("/contracts/:id", can("contracts.delete"), h.Delete)
 
@@ -41,12 +45,16 @@ func MountContracts(v1 *gin.RouterGroup, h *ContractHandler, r *RentalHandler, i
 	landlord.POST("/contracts/:id/cancellation-request/decline", can("contracts.update"), h.DeclineCancellation)
 
 	// The landlord's offers of rooms by link.
-	landlord.GET("/contract-invitations", can("contracts.create"), inv.List)
-	landlord.POST("/contract-invitations", can("contracts.create"), issue, inv.Create)
-	landlord.GET("/contract-invitations/:id", can("contracts.create"), inv.Get)
-	landlord.GET("/contract-invitations/:id/link", can("contracts.create"), copyLink, inv.Link)
-	landlord.POST("/contract-invitations/:id/regenerate", can("contracts.create"), issue, inv.Regenerate)
-	landlord.DELETE("/contract-invitations/:id", can("contracts.create"), inv.Revoke)
+	inviter.GET("/contract-invitations", can("contracts.create"), inv.List)
+	inviter.POST("/contract-invitations", can("contracts.create"), issue, inv.Create)
+	inviter.GET("/contract-invitations/:id", can("contracts.create"), inv.Get)
+	inviter.GET("/contract-invitations/:id/link", can("contracts.create"), copyLink, inv.Link)
+	inviter.POST("/contract-invitations/:id/regenerate", can("contracts.create"), issue, inv.Regenerate)
+	inviter.DELETE("/contract-invitations/:id", can("contracts.create"), inv.Revoke)
+
+	// The landlord answers the offers their managers wrote.
+	landlord.POST("/contract-invitations/:id/approve", can("contracts.update"), inv.Approve)
+	landlord.POST("/contract-invitations/:id/reject", can("contracts.update"), inv.Reject)
 
 	// The invited person's side: the contract is made on accept, through the rules of every contract.
 	tenant.POST("/contract-invitations/preview", can("contract_invitations.respond"), answer, inv.Preview)

@@ -132,7 +132,7 @@ func (h *InvoiceHandler) Create(c *gin.Context) {
 		httpx.Fail(c, mapInvoiceError(err))
 		return
 	}
-	h.one(c, domain.Viewer{UserID: landlord, AsLandlord: true}, http.StatusCreated, v)
+	h.one(c, writerViewer(c, landlord), http.StatusCreated, v)
 }
 
 // Get answers GET /v1/invoices/{id}.
@@ -175,7 +175,7 @@ func (h *InvoiceHandler) Update(c *gin.Context) {
 		httpx.Fail(c, mapInvoiceError(err))
 		return
 	}
-	h.one(c, domain.Viewer{UserID: landlord, AsLandlord: true}, http.StatusOK, v)
+	h.one(c, writerViewer(c, landlord), http.StatusOK, v)
 }
 
 // PreviewUpdate answers POST /v1/invoices/{id}/preview: what the corrected bill would look like.
@@ -231,7 +231,7 @@ func (h *InvoiceHandler) Send(c *gin.Context) {
 		httpx.Fail(c, mapInvoiceError(err))
 		return
 	}
-	h.one(c, domain.Viewer{UserID: landlord, AsLandlord: true}, http.StatusOK, v)
+	h.one(c, writerViewer(c, landlord), http.StatusOK, v)
 }
 
 // SetStatus answers PATCH /v1/invoices/{id}: a bill moves between unpaid (sent) and paid.
@@ -250,7 +250,7 @@ func (h *InvoiceHandler) SetStatus(c *gin.Context) {
 		httpx.Fail(c, mapInvoiceError(err))
 		return
 	}
-	h.one(c, domain.Viewer{UserID: landlord, AsLandlord: true}, http.StatusOK, v)
+	h.one(c, writerViewer(c, landlord), http.StatusOK, v)
 }
 
 func (h *InvoiceHandler) link(c *gin.Context, fresh bool) {

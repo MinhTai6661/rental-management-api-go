@@ -249,10 +249,14 @@ type Detail struct {
 	CreatedBy *Person
 }
 
-// Viewer is who is looking at bills: a landlord (the bills of their contracts) or a tenant (their own).
+// Viewer is who is looking at bills: a landlord (the bills of their contracts), a manager (those of the rooms handed to
+// them) or a tenant (their own).
 type Viewer struct {
 	UserID     uuid.UUID
 	AsLandlord bool
+	// AsManager: the bills of the rooms handed to the viewer (a manager acting as one), never those of a contract the
+	// viewer holds as tenant.
+	AsManager bool
 }
 
 // Totals is what the payments of a bill add up to.

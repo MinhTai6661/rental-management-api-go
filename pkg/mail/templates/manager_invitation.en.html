@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<body style="font-family: sans-serif; line-height: 1.5; color: #1f2937;">
+  <p>Hello,</p>
+  <p><strong>{{.Landlord}}</strong> asks you to manage these rooms for them: <strong>{{.Rooms}}</strong>.</p>
+  <p><a href="{{.URL}}" style="display: inline-block; padding: 10px 18px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 6px;">See the invitation</a></p>
+  <p>Or copy this link into your browser: <br>{{.URL}}</p>
+  <p style="color: #6b7280;">The invitation is open until {{.Expires}}.</p>
+  {{if .OptOutURL}}<p style="color: #6b7280;">Do not want invitations by email? <a href="{{.OptOutURL}}">Stop invitations</a>.</p>{{end}}
+</body>
+</html>

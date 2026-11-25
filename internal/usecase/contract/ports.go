@@ -191,6 +191,12 @@ type InvitationRepository interface {
 	// Inbox returns a page of the unexpired pending invitations addressed to the account, newest first, and how many
 	// there are in all.
 	Inbox(ctx context.Context, recipientID uuid.UUID, now time.Time, limit, offset int) ([]domain.InvitationOffer, int, error)
+	// GetAuthored returns an offer the manager wrote while they still manage its room (shared.ErrNotFound otherwise).
+	GetAuthored(ctx context.Context, authorID, id uuid.UUID) (domain.InvitationDetail, error)
+	// ListAuthored is List for the offers a manager wrote.
+	ListAuthored(ctx context.Context, authorID uuid.UUID, status *domain.InvitationStatus, limit, offset int) ([]domain.InvitationDetail, int, error)
+	// RevokeAwaitingOfAuthor withdraws the offers the manager wrote that still wait for the landlord and returns them.
+	RevokeAwaitingOfAuthor(ctx context.Context, authorID uuid.UUID, at time.Time) ([]domain.Invitation, error)
 	// RevokeOpenOfRooms withdraws the waiting invitations of the rooms (wiping their secrets) and returns them.
 	RevokeOpenOfRooms(ctx context.Context, roomIDs []uuid.UUID, at time.Time) ([]domain.Invitation, error)
 }
@@ -240,3 +246,23 @@ type NoInvitationMailer struct{}
 
 // SendInvitation does nothing.
 func (NoInvitationMailer) SendInvitation(context.Context, InvitationMail) error { return nil }
+
+// Grant is what a manager was given on a room, as far as offers of the room go.
+type Grant struct {
+	// Propose: the manager may write an offer of the room.
+	Propose bool
+	// Create: the offer goes out without the landlord's approval.
+	Create bool
+}
+
+// Managers tells what an account was given on a room (the manager context, through the composition root). The caller
+// has already decided the account acts as a manager; a room nobody handed over has the zero Grant.
+type Managers interface {
+	Grant(ctx context.Context, userID, roomID uuid.UUID) (Grant, error)
+}
+
+// NoManagers is the default: nobody manages anything.
+type NoManagers struct{}
+
+// Grant is the zero Grant.
+func (NoManagers) Grant(context.Context, uuid.UUID, uuid.UUID) (Grant, error) { return Grant{}, nil }

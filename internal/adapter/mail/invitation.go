@@ -2,6 +2,7 @@ package mailadapter
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"rental-management/pkg/mail"
@@ -29,6 +30,20 @@ func (m *InvitationMailer) Send(ctx context.Context, to, landlord, room, url str
 		data.OptOutURL = m.optOut(to)
 	}
 	msg, err := m.renderer.ContractInvitation("vi", data)
+	if err != nil {
+		return err
+	}
+	return m.mailer.Send(ctx, msg)
+}
+
+// SendManager emails the "you are asked to manage rooms" message in Vietnamese. Like Send, it takes plain values; rooms
+// are the names of the rooms offered.
+func (m *InvitationMailer) SendManager(ctx context.Context, to, landlord string, rooms []string, url string, expiresAt time.Time) error {
+	data := mail.ManagerInvitation{To: to, Landlord: landlord, Rooms: strings.Join(rooms, ", "), URL: url, ExpiresAt: expiresAt}
+	if m.optOut != nil {
+		data.OptOutURL = m.optOut(to)
+	}
+	msg, err := m.renderer.ManagerInvitation("vi", data)
 	if err != nil {
 		return err
 	}

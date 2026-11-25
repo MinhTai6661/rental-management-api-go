@@ -70,3 +70,24 @@ func TestContractInvitationEscapesTheNamesInHTMLAndFallsBackToVietnamese(t *test
 		t.Errorf("an unknown language gives Vietnamese:\n%s", m.Text)
 	}
 }
+
+func TestManagerInvitationRendersBothLanguages(t *testing.T) {
+	renderer, err := NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{"vi", "en"} {
+		msg, err := renderer.ManagerInvitation(lang, ManagerInvitation{
+			To: "a@example.vn", Landlord: "Chủ Trọ", Rooms: "P101, P102", URL: "http://web.test/manager-invitation?token=abc",
+			OptOutURL: "http://web.test/out", ExpiresAt: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", lang, err)
+		}
+		for _, want := range []string{"P101, P102", "token=abc", "http://web.test/out"} {
+			if !strings.Contains(msg.Text, want) || !strings.Contains(msg.HTML, want) {
+				t.Errorf("%s: %q missing", lang, want)
+			}
+		}
+	}
+}

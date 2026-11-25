@@ -12,7 +12,9 @@ LEFT JOIN users t ON t.id = c.tenant_id
 WHERE c.deleted_at IS NULL
   AND (NOT @scoped::boolean
        OR (@as_landlord::boolean AND c.landlord_id = @viewer_id AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL)
-       OR (NOT @as_landlord::boolean AND c.tenant_id = @viewer_id))
+       OR (@as_manager::boolean AND c.tenant_id IS DISTINCT FROM @viewer_id AND r.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM room_managers rm WHERE rm.room_id = c.room_id AND rm.manager_id = @viewer_id AND rm.status = 'active'))
+       OR (NOT @as_landlord::boolean AND NOT @as_manager::boolean AND c.tenant_id = @viewer_id))
   AND (NOT @running_only::boolean OR (c.status = 'active' AND c.confirmed_at IS NOT NULL AND r.deleted_at IS NULL))
   AND (sqlc.narg('id')::uuid IS NULL OR c.id = sqlc.narg('id')::uuid)
   AND c.id > @after_id

@@ -9,6 +9,10 @@ const (
 	NotifyInvoiceDueSoon       = "invoice_due_soon"
 	NotifyInvoiceOverdue       = "invoice_overdue"
 	NotifyTenantInvoiceOverdue = "tenant_invoice_overdue"
+	// NotifyManagerBillSent and NotifyManagerBillEdited tell the landlord a manager sent or corrected a bill (params add
+	// manager).
+	NotifyManagerBillSent   = "manager_bill_sent"
+	NotifyManagerBillEdited = "manager_bill_edited"
 )
 
 // The audit actions the invoice use cases record.

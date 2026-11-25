@@ -60,3 +60,41 @@ func (r *Renderer) ContractInvitation(lang string, data ContractInvitation) (Mes
 		HTML:    html.String(),
 	}, nil
 }
+
+// ManagerInvitation is the data of the "you are asked to manage rooms" message.
+type ManagerInvitation struct {
+	To       string
+	Landlord string
+	// Rooms is the list of room names, already joined for reading.
+	Rooms string
+	// URL is the link the person opens to see the invitation and answer it.
+	URL string
+	// OptOutURL is the link that stops further invitation emails; empty leaves the line out.
+	OptOutURL string
+	ExpiresAt time.Time
+}
+
+// ManagerInvitation renders the invitation to manage rooms in the language ("vi" or "en"; anything else gives
+// Vietnamese).
+func (r *Renderer) ManagerInvitation(lang string, data ManagerInvitation) (Message, error) {
+	if lang != "en" {
+		lang = "vi"
+	}
+	layout, subject := "02/01/2006", "Lời mời quản lý phòng của "+data.Landlord
+	if lang == "en" {
+		layout, subject = "2 January 2006", data.Landlord+" asks you to manage their rooms"
+	}
+	view := struct {
+		Landlord, Rooms, URL, OptOutURL, Expires string
+	}{data.Landlord, data.Rooms, data.URL, data.OptOutURL, data.ExpiresAt.Format(layout)}
+
+	name := "manager_invitation." + lang
+	var text, html bytes.Buffer
+	if err := r.text.ExecuteTemplate(&text, name+".txt", view); err != nil {
+		return Message{}, fmt.Errorf("render %s text: %w", name, err)
+	}
+	if err := r.html.ExecuteTemplate(&html, name+".html", view); err != nil {
+		return Message{}, fmt.Errorf("render %s html: %w", name, err)
+	}
+	return Message{To: data.To, Subject: subject, Text: strings.TrimLeft(text.String(), "\n"), HTML: html.String()}, nil
+}
