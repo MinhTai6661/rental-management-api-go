@@ -413,3 +413,17 @@ func TestAuditRetention(t *testing.T) {
 		}
 	}
 }
+
+func TestStatsCacheSeconds(t *testing.T) {
+	if cfg, err := parse(map[string]string{}); err != nil || cfg.StatsCacheSeconds != 900 {
+		t.Fatalf("default 900 seconds: %+v %v", cfg, err)
+	}
+	if cfg, err := parse(map[string]string{"STATS_CACHE_SECONDS": "0"}); err != nil || cfg.StatsCacheSeconds != 0 {
+		t.Errorf("0 turns the cache off: %v", err)
+	}
+	for _, v := range []string{"-1", "86401"} {
+		if _, err := parse(map[string]string{"STATS_CACHE_SECONDS": v}); err == nil {
+			t.Errorf("STATS_CACHE_SECONDS=%s must be refused", v)
+		}
+	}
+}

@@ -126,6 +126,10 @@ type Config struct {
 	AuditRoutineRetentionDays     int `env:"AUDIT_ROUTINE_RETENTION_DAYS" envDefault:"90"`
 	AuditPartitionsAhead          int `env:"AUDIT_PARTITIONS_AHEAD" envDefault:"3"`
 
+	// StatsCacheSeconds is how long a landlord's figures are kept in the cache before they are worked out again; 0 turns
+	// the cache off, at most 86400. A change shows only when the answer expires.
+	StatsCacheSeconds int `env:"STATS_CACHE_SECONDS" envDefault:"900"`
+
 	// AnnouncementImageMaxPlatform and AnnouncementImageMaxLandlord are how many pictures a popup of the platform's admins
 	// and of a landlord may have; 1 to 20.
 	AnnouncementImageMaxPlatform int `env:"ANNOUNCEMENT_IMAGE_MAX_PLATFORM" envDefault:"10"`
@@ -355,6 +359,9 @@ func (c Config) validateBackends() error {
 	}
 	if c.AuditPartitionsAhead < 1 || c.AuditPartitionsAhead > 24 {
 		return fmt.Errorf("AUDIT_PARTITIONS_AHEAD must be between 1 and 24, got %d", c.AuditPartitionsAhead)
+	}
+	if c.StatsCacheSeconds < 0 || c.StatsCacheSeconds > 86400 {
+		return fmt.Errorf("STATS_CACHE_SECONDS must be between 0 and 86400, got %d", c.StatsCacheSeconds)
 	}
 	if c.NotificationRetentionDays < 1 || c.NotificationRetentionDays > 3650 {
 		return fmt.Errorf("NOTIFICATION_RETENTION_DAYS must be between 1 and 3650, got %d", c.NotificationRetentionDays)

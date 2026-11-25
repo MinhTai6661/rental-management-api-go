@@ -27,6 +27,7 @@ import (
 	listinghttp "rental-management/internal/adapter/http/listing"
 	notificationhttp "rental-management/internal/adapter/http/notification"
 	propertyhttp "rental-management/internal/adapter/http/property"
+	statshttp "rental-management/internal/adapter/http/stats"
 	"rental-management/internal/adapter/http/testenv"
 	"rental-management/internal/domain/identity"
 	contractuc "rental-management/internal/usecase/contract"
@@ -66,6 +67,7 @@ type bridgeEnv struct {
 	props     property
 	staff     admin
 	trail     auditing
+	figures   numbers
 	auth      fakeAuth
 	landlord  uuid.UUID
 	landlord2 uuid.UUID
@@ -124,6 +126,7 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 	e.rentals = newContracts(cfg, log, e.pool, e.plans, invitationPorts{}, e.inbox.deliveries)
 	e.props = newProperty(cfg, log, e.pool, files, e.rentals, e.offers, e.plans)
 	e.trail = newAudit(cfg, log, e.pool)
+	e.figures = newStats(cfg, log, e.pool, nil)
 	e.staff = newAdmin(cfg, log, e.pool, adminPorts{notify: e.inbox.deliveries, buildings: e.props.buildings})
 
 	catalog, err := i18n.New()
@@ -163,6 +166,7 @@ func newBridgeEnv(t *testing.T) *bridgeEnv {
 	legal := adminhttp.NewLegalHandler(e.staff.legal, binder)
 	adminhttp.MountAdmin(v1, adminhttp.NewUserHandler(e.staff.users, binder), apps, adminhttp.NewSettingsHandler(e.staff.settings, binder), legal, auth, allowAll{})
 	audithttp.Mount(v1, audithttp.NewHandler(e.trail.reader), auth)
+	statshttp.Mount(v1, statshttp.NewPropertyHandler(e.figures.property, time.Now), statshttp.NewPlatformHandler(e.figures.platform, time.Now), auth)
 	adminhttp.MountSelf(v1, apps, adminhttp.NewProfileHandler(e.staff.profiles, binder), legal, adminhttp.NewPersonalDataHandler(e.staff.personal, binder), auth, allowAll{})
 	return e
 }

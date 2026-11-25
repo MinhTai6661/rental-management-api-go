@@ -218,6 +218,7 @@
   "validation.link_not_allowed": "Chỉ quản trị viên được gắn liên kết cho ảnh.",
   "validation.after_or_equal": "Phải từ {{.other}} trở đi.",
   "validation.max_days": "Khoảng tối đa {{.max}} ngày.",
+  "validation.max_months": "Khoảng tối đa {{.max}} tháng.",
   "validation.audience_empty": "Chọn ít nhất một tiêu chí cho nhóm người nhận.",
   "validation.attributes.body": "nội dung",
   "validation.attributes.type": "loại",

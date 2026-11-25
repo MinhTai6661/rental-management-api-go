@@ -102,6 +102,7 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `REALTIME_MAX_STREAMS_PER_USER` | `5` | open event streams one person may hold on one API instance (1-100); the next one is a 429 |
 | `NOTIFICATION_RETENTION_DAYS` | `90` | how long a notification is kept before `notifications-prune` deletes it (1-3650) |
 | `AUDIT_IMPORTANT_RETENTION_MONTHS` / `AUDIT_ROUTINE_RETENTION_DAYS` / `AUDIT_PARTITIONS_AHEAD` | `24` / `90` / `3` | how long the two tiers of the audit trail are kept (`audit-maintain` drops whole monthly partitions past it; 1-240 months / 1-3650 days) and how many months after the current one get a partition in advance (1-24) |
+| `STATS_CACHE_SECONDS` | `900` | how long a landlord's statistics are kept in Redis before they are worked out again (0 = no cache, at most 86400); a change shows only when the answer expires (the platform's and the system's figures are never cached) |
 | `SEED_DEMO_PASSWORD` | - | password of the `seed -demo` accounts; the command refuses to run in production |
 
 ## Pictures in S3/R2
@@ -1061,6 +1062,44 @@ to the one `Recorder` in `cmd/rental-management/bridges_audit.go`. Rules: [`docs
 | GET | `/v1/my/activity` | signed in | both tiers, what the caller did and what was done to their account (default 20); what *others* did shows only their role (no name, no changes, no address); neighbouring identical entries of one second merge with `count` |
 | GET | `/v1/rooms/{id}/history`, `/v1/contracts/{id}/history`, `/v1/invoices/{id}/history` | landlord + `rooms\|contracts\|invoices.update` | important tier only, default 20; the landlord who owns it, anyone else a 404; a room's history includes its contracts and invoices (their entries carry the room) |
 
+### Statistics
+
+The thirteenth context, `stats`: `domain/stats/` (`Percent`/`Change` that are null, never 0, without a denominator; `MonthRange` of at most 36
+months, default the last 12; `Occupancy` worked out day by day from the days a room existed and the days it was rented), `usecase/stats/`
+(`Property`, `Platform`), `adapter/http/stats/` (`statshttp`) and `adapter/persistence/postgres/stats/` (`statspg`). It only reads: its
+queries (`db/queries/stats/landlord_figures.sql`, `platform_figures.sql`) count the tables of other contexts with `GROUP BY` in SQL, months cut
+in `Asia/Ho_Chi_Minh`, and it knows no other context and none knows it (`stats-does-not-know-other-contexts`, `other-contexts-do-not-know-stats`).
+No migration. Only totals are returned, never a person. Money is whole VND in `*_vnd`; a ratio is a percentage with one decimal and `null` when
+there is nothing to divide by.
+
+- **Three readings of money.** *Billed* = invoices `sent` or `paid`, by the month their period starts (a draft is not billed). *Collected* =
+  `confirmed` payments by the month they were paid (not those awaiting review; a payment recorded by hand counts). *Still to collect* = what the
+  `sent` invoices of the month lack of their confirmed payments. *Overdue* = `sent` and past `due_at`. The collection rate of a month is the part of
+  its own invoices already paid, so money for an older invoice does not lift it.
+- **Occupancy** is days rented over days available per month (a room exists from its creation to its deletion; a contract counts when `active` or
+  `ended`, an `ended` one with no end date ended today; nothing after today is counted). `overview.occupancy_rate` is a different thing: rooms
+  `rented` now over rooms standing.
+- **Cache**: the landlord's answers sit in Redis for `STATS_CACHE_SECONDS` (default 900; key = endpoint, landlord, active role, building, range, sort, limit
+  and the day). They are **not** dropped when an invoice or payment changes: a figure can lag by that time (see Known gaps). The platform's and the
+  system's answers are never cached.
+- **Query**: `?from`, `?to` (days; the months they fall in; 36 months at most, `to` not before `from`), `?building_id`, `?sort=billed|collected|occupancy`
+  (rooms), `?limit` (1-100; rooms and buildings default 50, the dashboard's ranking 10). A bad value is a 422 on that field.
+
+| Method | Path | Who | Answer (`{"data": ...}`) |
+|---|---|---|---|
+| GET | `/v1/stats/property/dashboard` | landlord + `stats.view` | `{overview, revenue, occupancy, rooms, utilities}`, each exactly what its own endpoint gives (the web calls it with `?from&to&sort=billed&limit=10`) |
+| GET | `/v1/stats/property/overview` | same | `{rooms{total,rented,available,maintenance}, occupancy_rate, active_contracts, pending_registrations, expiring_soon (active ending within 30 days), money{outstanding_vnd, overdue_vnd, overdue_count, this_month{billed_vnd, collected_vnd, collection_rate}, previous_month{...}, billed_change, collected_change}}` |
+| GET | `/v1/stats/property/revenue` | same | `{months[{month "YYYY-MM", billed_vnd, collected_vnd, outstanding_vnd}], totals{billed_vnd, collected_vnd, outstanding_vnd}}`, every month of the range |
+| GET | `/v1/stats/property/occupancy` | same | `{months[{month, occupied_days, available_days, rate}]}` |
+| GET | `/v1/stats/property/rooms` | same | `{rooms[{room_id, building_id, name, billed_vnd, collected_vnd, occupied_days, available_days, occupancy_rate}]}` over the whole range, deleted rooms included, by `sort` (null rates last) |
+| GET | `/v1/stats/property/buildings` | same | `{buildings[{building_id, name, rooms, rented, billed_vnd, collected_vnd, occupied_days, available_days, occupancy_rate}]}`, richest first; rooms in no building are one row with `building_id: null`; takes no `building_id` |
+| GET | `/v1/stats/property/utilities` | same | `{months[{month, electricity{consumption, cost_vnd}, water{consumption, cost_vnd}}]}` from the meter readings (cost = consumption x the unit price it was billed at) |
+| GET | `/v1/stats/admin/overview` | admin or super admin + `stats.admin` | `{users{total, active, new_this_month, new_previous_month, change, by_role{tenant,landlord,manager,admin,super_admin}}, applications{by_status{pending_review,approved,rejected}, average_review_hours, oldest_waiting_days}, subscriptions{pending_requests}, announcements{sent_this_month, recent_read_rate}}`; a person with two roles counts under each; the two nullable fields are `null` when nothing was reviewed / nobody waits |
+| GET | `/v1/stats/admin/growth` | same | `{months[{month, users, applications}]}` (new accounts and landlord applications; `?from`, `?to`) |
+| GET | `/v1/stats/system/overview` | super admin only + `stats.system` | `{staff{admins, super_admins}, plans[{code, name, audience, price_vnd, billing_interval, subscribers}], monthly_recurring_vnd (a yearly plan spread over 12), paid_subscribers, setting_changes[{at, actor_id, changes}] (the 5 latest), audit_last_30_days{important, routine}}` |
+
+An admin has no landlord figures and a landlord no staff ones (the roles do not overlap); a manager has no `stats.view` yet.
+
 ### Error codes
 
 Each code has a vi and en message (`errors.<code>`); a test fails if a code or a validation rule has no translation or
@@ -1330,7 +1369,9 @@ reach, publish/unpublish/recall, scheduling with `announcements-dispatch-due`, t
 `/v1/media` route. **Batch 4 is done**: realtime push with server-sent events (ticket, stream, hub, Redis Pub/Sub, heartbeat, 15-minute streams).
 Still to come in this phase: the worker.
 
-Later phases (each module: migration, queries, service, handlers, tests): `report`, `stats`, plus
+Done: phase 13, `stats` (no migration; the landlord's dashboard, revenue, occupancy, rooms, buildings and utilities, the platform's overview and growth, the system's overview; see [Statistics](#statistics)).
+
+Later phases (each module: migration, queries, service, handlers, tests): `report`, plus
 admin user management, landlord applications, manager hand-over and invitations, and social login.
 
 Pure rules of the Laravel project to port (as Go table tests, taking its `tests/Unit` cases as the starting point):
@@ -1359,7 +1400,7 @@ Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/roo
 `/contract-invitations`, `/invoices` (done), `/invoices/{id}/payments` (done), `/my/payment-methods` (done), `/managers`; account
 `/me/invoices`, `/notifications` (done); public `/public/rooms` (done); admin
 `/admin/users`, `/admin/landlord-applications`, `/admin/announcements`,
-`/admin/audit-logs` (done); others `/reports`, `/stats/landlord`, `/stats/platform`.
+`/admin/audit-logs` (done), `/stats/*` (done); others `/reports`.
 
 ### Web impact (separate workstream)
 
@@ -1372,6 +1413,13 @@ new logout-all, change-password, verify/resend email), list pages (a `meta.page`
 as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
+
+- **Stats**: a landlord's figures are cached for `STATS_CACHE_SECONDS` and are **not** dropped when an invoice, payment, contract, room or meter reading changes
+  (no event hook yet), so a payment shows after at most 15 minutes by default (set `STATS_CACHE_SECONDS=0` to turn it off, or add an invalidation by
+  landlord in `bridges*.go` later). A manager has no `stats.view` (Laravel gives none either), so there are no figures for the rooms a manager runs.
+  The platform overview has no `reports` block (no report context yet), there is no CSV/xlsx export, and `failed_jobs` is left out of the system
+  overview (the owner's decision). `active_contracts` counts every active contract, blank ones (no account) included. A figure of billed money
+  reads the invoice's own period month, so an invoice sent in October for September is September's.
 
 - **Manager**: the manager's rights are wired into contract reads, bills and contract offers only. **Not yet**: payments (`payments.review` to confirm/reject a payment, record money received, and the manager's view of payments), `contracts.review_registrations` (approve/reject registrations, bulk, and the notice of a new registration), the manager's `abilities` on the contract JSON, the `payment_methods` 403 test, and the manager mail has only a Vietnamese template. The room history routes stay for the landlord.
 

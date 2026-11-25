@@ -34,6 +34,7 @@ import (
 	paymenthttp "rental-management/internal/adapter/http/payment"
 	planhttp "rental-management/internal/adapter/http/plan"
 	propertyhttp "rental-management/internal/adapter/http/property"
+	statshttp "rental-management/internal/adapter/http/stats"
 	"rental-management/internal/adapter/imageproc"
 	mailadapter "rental-management/internal/adapter/mail"
 	"rental-management/internal/adapter/persistence/postgres"
@@ -166,6 +167,7 @@ func runAPI(ctx context.Context) error {
 	}
 
 	trail := newAudit(cfg, log, pool)
+	numbers := newStats(cfg, log, pool, redisstore.NewStatsCache(rdb, cfg.RedisKeyPrefix))
 	staff := newAdmin(cfg, log, pool, adminPorts{rdb: rdb, notify: inbox.deliveries, buildings: properties.buildings})
 
 	announcementImages := notificationhttp.NewImageHandler(inbox.images, files, httpx.NewBinder(), cfg.MediaMaxUploadBytes)
@@ -247,6 +249,9 @@ func runAPI(ctx context.Context) error {
 				},
 				func(v1 *gin.RouterGroup) {
 					audithttp.Mount(v1, audithttp.NewHandler(trail.reader), authenticator)
+				},
+				func(v1 *gin.RouterGroup) {
+					statshttp.Mount(v1, statshttp.NewPropertyHandler(numbers.property, time.Now), statshttp.NewPlatformHandler(numbers.platform, time.Now), authenticator)
 				},
 				func(v1 *gin.RouterGroup) {
 					invitationhttp.MountInvitees(v1, invitationhttp.NewInviteeHandler(invitees, httpx.NewBinder()), authenticator, limiter)

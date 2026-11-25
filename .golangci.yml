@@ -155,6 +155,8 @@ linters:
               desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/audit
               desc: the shared HTTP helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/http/stats
+              desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/testenv
               desc: the shared HTTP helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/http/invitation
@@ -229,6 +231,8 @@ linters:
             - pkg: rental-management/internal/adapter/persistence/postgres/admin
               desc: the shared database helpers must not import the feature packages
             - pkg: rental-management/internal/adapter/persistence/postgres/audit
+              desc: the shared database helpers must not import the feature packages
+            - pkg: rental-management/internal/adapter/persistence/postgres/stats
               desc: the shared database helpers must not import the feature packages
         # Contexts never import each other: property and contract talk through ports that cmd/rental-management
         # adapts (bridges.go), so either can be moved or replaced alone.
@@ -1172,6 +1176,183 @@ linters:
               desc: write to the audit trail through your own audit port (adapt it in cmd)
             - pkg: rental-management/internal/adapter/persistence/postgres/audit
               desc: write to the audit trail through your own audit port (adapt it in cmd)
+        # The statistics only read: they count the tables of the other contexts with queries of their own and know no other
+        # context, and no other context knows them. Test files are left out.
+        stats-does-not-know-other-contexts:
+          files:
+            - "**/internal/domain/stats/**"
+            - "**/internal/usecase/stats/**"
+            - "**/internal/adapter/http/stats/**"
+            - "**/internal/adapter/persistence/postgres/stats/**"
+            - "!$test"
+          deny:
+            - pkg: rental-management/internal/domain/identity
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/identity
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/identity
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/identity
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/location
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/location
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/location
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/property
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/property
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/property
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/contract
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/contract
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/contract
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/contract
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/plan
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/plan
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/plan
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/plan
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/listing
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/listing
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/listing
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/listing
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/invoice
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/invoice
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/invoice
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invoice
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/payment
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/payment
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/payment
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/payment
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/notification
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/notification
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/notification
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/notification
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/admin
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/admin
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/admin
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/invitation
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/invitation
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/invitation
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invitation
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/audit
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/audit
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/audit
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/audit
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/domain/manager
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/usecase/manager
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/http/manager
+              desc: the stats context must not import another context (read its tables with a query of your own)
+            - pkg: rental-management/internal/adapter/persistence/postgres/manager
+              desc: the stats context must not import another context (read its tables with a query of your own)
+        other-contexts-do-not-know-stats:
+          files:
+            - "**/internal/domain/identity/**"
+            - "**/internal/usecase/identity/**"
+            - "**/internal/adapter/http/identity/**"
+            - "**/internal/adapter/persistence/postgres/identity/**"
+            - "**/internal/domain/location/**"
+            - "**/internal/usecase/location/**"
+            - "**/internal/adapter/http/location/**"
+            - "**/internal/adapter/persistence/postgres/location/**"
+            - "**/internal/domain/property/**"
+            - "**/internal/usecase/property/**"
+            - "**/internal/adapter/http/property/**"
+            - "**/internal/adapter/persistence/postgres/property/**"
+            - "**/internal/domain/contract/**"
+            - "**/internal/usecase/contract/**"
+            - "**/internal/adapter/http/contract/**"
+            - "**/internal/adapter/persistence/postgres/contract/**"
+            - "**/internal/domain/plan/**"
+            - "**/internal/usecase/plan/**"
+            - "**/internal/adapter/http/plan/**"
+            - "**/internal/adapter/persistence/postgres/plan/**"
+            - "**/internal/domain/listing/**"
+            - "**/internal/usecase/listing/**"
+            - "**/internal/adapter/http/listing/**"
+            - "**/internal/adapter/persistence/postgres/listing/**"
+            - "**/internal/domain/invoice/**"
+            - "**/internal/usecase/invoice/**"
+            - "**/internal/adapter/http/invoice/**"
+            - "**/internal/adapter/persistence/postgres/invoice/**"
+            - "**/internal/domain/payment/**"
+            - "**/internal/usecase/payment/**"
+            - "**/internal/adapter/http/payment/**"
+            - "**/internal/adapter/persistence/postgres/payment/**"
+            - "**/internal/domain/notification/**"
+            - "**/internal/usecase/notification/**"
+            - "**/internal/adapter/http/notification/**"
+            - "**/internal/adapter/persistence/postgres/notification/**"
+            - "**/internal/domain/admin/**"
+            - "**/internal/usecase/admin/**"
+            - "**/internal/adapter/http/admin/**"
+            - "**/internal/adapter/persistence/postgres/admin/**"
+            - "**/internal/domain/invitation/**"
+            - "**/internal/usecase/invitation/**"
+            - "**/internal/adapter/http/invitation/**"
+            - "**/internal/adapter/persistence/postgres/invitation/**"
+            - "**/internal/domain/audit/**"
+            - "**/internal/usecase/audit/**"
+            - "**/internal/adapter/http/audit/**"
+            - "**/internal/adapter/persistence/postgres/audit/**"
+            - "**/internal/domain/manager/**"
+            - "**/internal/usecase/manager/**"
+            - "**/internal/adapter/http/manager/**"
+            - "**/internal/adapter/persistence/postgres/manager/**"
+          deny:
+            - pkg: rental-management/internal/domain/stats
+              desc: the statistics are served from cmd/rental-management; no other context depends on them
+            - pkg: rental-management/internal/usecase/stats
+              desc: the statistics are served from cmd/rental-management; no other context depends on them
+            - pkg: rental-management/internal/adapter/http/stats
+              desc: the statistics are served from cmd/rental-management; no other context depends on them
+            - pkg: rental-management/internal/adapter/persistence/postgres/stats
+              desc: the statistics are served from cmd/rental-management; no other context depends on them
         manager-does-not-know-other-contexts:
           files:
             - "**/internal/domain/manager/**"

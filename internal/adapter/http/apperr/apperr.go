@@ -163,6 +163,7 @@ const (
 	RuleLinkNotAllowed = "link_not_allowed"
 	RuleAfterOrEqual   = "after_or_equal"
 	RuleMaxDays        = "max_days"
+	RuleMaxMonths      = "max_months"
 
 	// Admin rules.
 	RuleStaffRolesMixed      = "staff_roles_mixed"
@@ -216,7 +217,7 @@ func Rules() []string {
 		RuleCannotManage, RuleRoomsChanged, RuleRoomNotOwned, RuleRoomsManaged, RuleRoomsPending, RuleReplaceNotListed,
 		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
 		RuleTitleBodyPair, RuleOneLanguage, RuleNowhereToGo, RuleCTAIncomplete, RuleURLUnsafe, RuleNoPeople, RuleAudienceEmpty,
-		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays,
+		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays, RuleMaxMonths,
 		RuleStaffRolesMixed, RuleHasActiveContracts, RuleAlreadyLandlord, RuleNotRenter, RuleAlreadyPending, RuleNotReviewable, RuleStaffCannotErase, RuleErasureBlocked, RuleRichTextStructure, RuleRichTextNodeType, RuleRichTextMarkType, RuleRichTextHeadingLevel, RuleRichTextLink, RuleRichTextTooLarge, RuleRichTextNoHeading, RuleRichTextEmpty,
 	}
 }

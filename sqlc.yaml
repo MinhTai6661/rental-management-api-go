@@ -18,6 +18,7 @@ sql:
       - db/queries/admin
       - db/queries/audit
       - db/queries/manager
+      - db/queries/stats
     gen:
       go:
         package: sqlc

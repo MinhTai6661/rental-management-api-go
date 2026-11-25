@@ -218,6 +218,7 @@
   "validation.link_not_allowed": "Only administrators may link a picture.",
   "validation.after_or_equal": "Must be on or after {{.other}}.",
   "validation.max_days": "At most {{.max}} days.",
+  "validation.max_months": "At most {{.max}} months.",
   "validation.audience_empty": "Pick at least one criterion for the audience.",
   "validation.attributes.body": "text",
   "validation.attributes.type": "type",
