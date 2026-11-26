@@ -34,6 +34,8 @@ linters:
           deny:
             - pkg: github.com/gin-gonic/gin
               desc: domain must not depend on the HTTP framework
+            - pkg: net/http
+              desc: domain must not speak HTTP (providers and clients are adapters behind ports)
             - pkg: github.com/jackc
               desc: domain must not depend on the database driver
             - pkg: github.com/redis
@@ -67,6 +69,8 @@ linters:
           deny:
             - pkg: github.com/gin-gonic/gin
               desc: use cases must not depend on the HTTP framework
+            - pkg: net/http
+              desc: use cases must not speak HTTP (providers and clients are adapters behind ports)
             - pkg: github.com/jackc
               desc: use cases must not depend on the database driver
             - pkg: github.com/redis
@@ -102,6 +106,7 @@ linters:
             - "**/internal/adapter/snapshot/**"
             - "**/internal/adapter/filestore/**"
             - "**/internal/adapter/imageproc/**"
+            - "**/internal/adapter/oauth/**"
           deny:
             - pkg: github.com/gin-gonic/gin
               desc: infrastructure adapters must not depend on the HTTP framework
@@ -109,6 +114,14 @@ linters:
               desc: infrastructure adapters implement the ports structurally and must not import use cases
             - pkg: rental-management/cmd
               desc: adapters must not import the composition root
+        # The OAuth2 library belongs to the Google provider alone: the rest of the code sees the SocialProvider port.
+        oauth2-only-in-the-oauth-adapter:
+          files:
+            - "$all"
+            - "!**/internal/adapter/oauth/**"
+          deny:
+            - pkg: golang.org/x/oauth2
+              desc: only the oauth adapter may import the OAuth2 library (use the SocialProvider port)
         # The HTTP adapter turns HTTP into use case calls; it never touches the database or Redis (its integration
         # tests wire the real adapters, so test files are left out).
         adapter-http:
@@ -1514,6 +1527,202 @@ linters:
               desc: talk to the manager context through your own port (adapt it in cmd)
             - pkg: rental-management/internal/adapter/persistence/postgres/manager
               desc: talk to the manager context through your own port (adapt it in cmd)
+        report-does-not-know-other-contexts:
+          files:
+            - "**/internal/domain/report/**"
+            - "**/internal/usecase/report/**"
+            - "**/internal/adapter/http/report/**"
+            - "**/internal/adapter/persistence/postgres/report/**"
+            - "!$test"
+          deny:
+            - pkg: rental-management/internal/domain/identity
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/identity
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/identity
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/identity
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/location
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/location
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/location
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/location
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/property
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/property
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/property
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/property
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/contract
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/contract
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/contract
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/contract
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/plan
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/plan
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/plan
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/plan
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/listing
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/listing
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/listing
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/listing
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invoice
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invoice
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invoice
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invoice
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/payment
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/payment
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/payment
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/payment
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/notification
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/notification
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/notification
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/notification
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/admin
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/admin
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/admin
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/admin
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/invitation
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/invitation
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/invitation
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/invitation
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/audit
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/audit
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/audit
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/audit
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/manager
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/manager
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/manager
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/manager
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/domain/stats
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/usecase/stats
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/stats
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/stats
+              desc: the report context must not import another context (use a port, adapt it in cmd)
+        other-contexts-do-not-know-report:
+          files:
+            - "**/internal/domain/identity/**"
+            - "**/internal/usecase/identity/**"
+            - "**/internal/adapter/http/identity/**"
+            - "**/internal/adapter/persistence/postgres/identity/**"
+            - "**/internal/domain/location/**"
+            - "**/internal/usecase/location/**"
+            - "**/internal/adapter/http/location/**"
+            - "**/internal/adapter/persistence/postgres/location/**"
+            - "**/internal/domain/property/**"
+            - "**/internal/usecase/property/**"
+            - "**/internal/adapter/http/property/**"
+            - "**/internal/adapter/persistence/postgres/property/**"
+            - "**/internal/domain/contract/**"
+            - "**/internal/usecase/contract/**"
+            - "**/internal/adapter/http/contract/**"
+            - "**/internal/adapter/persistence/postgres/contract/**"
+            - "**/internal/domain/plan/**"
+            - "**/internal/usecase/plan/**"
+            - "**/internal/adapter/http/plan/**"
+            - "**/internal/adapter/persistence/postgres/plan/**"
+            - "**/internal/domain/listing/**"
+            - "**/internal/usecase/listing/**"
+            - "**/internal/adapter/http/listing/**"
+            - "**/internal/adapter/persistence/postgres/listing/**"
+            - "**/internal/domain/invoice/**"
+            - "**/internal/usecase/invoice/**"
+            - "**/internal/adapter/http/invoice/**"
+            - "**/internal/adapter/persistence/postgres/invoice/**"
+            - "**/internal/domain/payment/**"
+            - "**/internal/usecase/payment/**"
+            - "**/internal/adapter/http/payment/**"
+            - "**/internal/adapter/persistence/postgres/payment/**"
+            - "**/internal/domain/notification/**"
+            - "**/internal/usecase/notification/**"
+            - "**/internal/adapter/http/notification/**"
+            - "**/internal/adapter/persistence/postgres/notification/**"
+            - "**/internal/domain/admin/**"
+            - "**/internal/usecase/admin/**"
+            - "**/internal/adapter/http/admin/**"
+            - "**/internal/adapter/persistence/postgres/admin/**"
+            - "**/internal/domain/invitation/**"
+            - "**/internal/usecase/invitation/**"
+            - "**/internal/adapter/http/invitation/**"
+            - "**/internal/adapter/persistence/postgres/invitation/**"
+            - "**/internal/domain/audit/**"
+            - "**/internal/usecase/audit/**"
+            - "**/internal/adapter/http/audit/**"
+            - "**/internal/adapter/persistence/postgres/audit/**"
+            - "**/internal/domain/manager/**"
+            - "**/internal/usecase/manager/**"
+            - "**/internal/adapter/http/manager/**"
+            - "**/internal/adapter/persistence/postgres/manager/**"
+            - "**/internal/domain/stats/**"
+            - "**/internal/usecase/stats/**"
+            - "**/internal/adapter/http/stats/**"
+            - "**/internal/adapter/persistence/postgres/stats/**"
+          deny:
+            - pkg: rental-management/internal/domain/report
+              desc: talk to the report context through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/usecase/report
+              desc: talk to the report context through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/http/report
+              desc: talk to the report context through your own port (adapt it in cmd)
+            - pkg: rental-management/internal/adapter/persistence/postgres/report
+              desc: talk to the report context through your own port (adapt it in cmd)
+        websocket-only-in-the-report-adapter-and-realtime:
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/internal/adapter/http/report/**"
+            - "!**/internal/adapter/realtime/**"
+          deny:
+            - pkg: github.com/gorilla/websocket
+              desc: the WebSocket library belongs to the report HTTP adapter (and the realtime adapter); domain and usecase never import it
   exclusions:
     presets:
       - std-error-handling

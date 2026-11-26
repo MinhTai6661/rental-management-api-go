@@ -51,3 +51,6 @@ SET full_name = @display_name, email = NULL, phone_number = NULL, address_detail
     password_hash = NULL, status = 'inactive', accepts_invitations = false, last_active_role = NULL,
     erased_at = @now::timestamptz, deleted_at = @now::timestamptz, updated_at = @now::timestamptz
 WHERE id = @id;
+
+-- name: AdminDeleteOAuthAccountsOfUser :exec
+DELETE FROM oauth_accounts WHERE user_id = $1;

@@ -10,8 +10,13 @@ import (
 	domain "rental-management/internal/domain/identity"
 )
 
-// openSession records a new login session acting in role and returns its credentials and the user.
+// openSession records a new password login session acting in role and returns its credentials and the user.
 func (a *Auth) openSession(ctx context.Context, userID uuid.UUID, role string, client Client) (LoginResult, error) {
+	return a.openSessionVia(ctx, userID, role, loginVia, client)
+}
+
+// openSessionVia is openSession for a sign-in made another way: via ("password", "google"...) goes into the audit trail.
+func (a *Auth) openSessionVia(ctx context.Context, userID uuid.UUID, role, via string, client Client) (LoginResult, error) {
 	now := a.clock.Now()
 	sessionID, err := uuid.NewV7()
 	if err != nil {
@@ -28,7 +33,7 @@ func (a *Auth) openSession(ctx context.Context, userID uuid.UUID, role string, c
 		}
 		return a.audit.Record(ctx, AuditEvent{
 			Action: AuditLogin, ActorID: userID, ActorRole: role, SessionID: sessionID, TargetUserID: &userID,
-			Meta: map[string]any{"via": loginVia},
+			Meta: map[string]any{"via": via},
 		})
 	})
 	if err != nil {

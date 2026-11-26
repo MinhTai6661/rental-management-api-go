@@ -83,6 +83,15 @@ func (q *Queries) AdminDeleteNotificationsOfUser(ctx context.Context, userID uui
 	return err
 }
 
+const adminDeleteOAuthAccountsOfUser = `-- name: AdminDeleteOAuthAccountsOfUser :exec
+DELETE FROM oauth_accounts WHERE user_id = $1
+`
+
+func (q *Queries) AdminDeleteOAuthAccountsOfUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, adminDeleteOAuthAccountsOfUser, userID)
+	return err
+}
+
 const adminErasureBlockers = `-- name: AdminErasureBlockers :one
 
 SELECT

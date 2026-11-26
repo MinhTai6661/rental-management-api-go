@@ -108,3 +108,21 @@ func (r *UserRepository) FirstWardCode(ctx context.Context) (int32, error) {
 	code, err := postgres.Queries(ctx, r.pool).FirstWardCode(ctx)
 	return code, postgres.Translate(err)
 }
+
+// CreateSocial inserts an account made by signing in with a provider: no password, an email only when the provider
+// vouched for it (and then it counts as verified), and no accepted terms yet. A taken email is a unique ConstraintError.
+func (r *UserRepository) CreateSocial(ctx context.Context, u domain.NewSocialUser) error {
+	var verifiedAt *time.Time
+	if u.Email != nil {
+		verifiedAt = &u.CreatedAt
+	}
+	_, err := postgres.Queries(ctx, r.pool).CreateUser(ctx, sqlcgen.CreateUserParams{
+		ID: u.ID, Email: u.Email, FullName: u.FullName, LastActiveRole: &u.LastActiveRole, EmailVerifiedAt: verifiedAt, Now: u.CreatedAt,
+	})
+	return postgres.Translate(err)
+}
+
+// ConfirmEmailFromProvider marks the email verified and removes the password.
+func (r *UserRepository) ConfirmEmailFromProvider(ctx context.Context, id uuid.UUID, now time.Time) error {
+	return postgres.Translate(postgres.Queries(ctx, r.pool).ConfirmEmailFromProvider(ctx, sqlcgen.ConfirmEmailFromProviderParams{ID: id, Now: now}))
+}

@@ -231,6 +231,35 @@ type Plan struct {
 	UpdatedAt               time.Time
 }
 
+type ReportDetail struct {
+	ID                 uuid.UUID
+	ReporterID         uuid.UUID
+	Kind               string
+	RoomID             *uuid.UUID
+	RoomLandlordID     *uuid.UUID
+	RoomName           *string
+	Subject            string
+	Body               string
+	Status             string
+	CreatedAt          time.Time
+	DeletedAt          *time.Time
+	ReporterName       string
+	ReporterIsStaff    bool
+	ReporterIsLandlord bool
+	RepliesCount       int32
+}
+
+type ReportReplyDetail struct {
+	ID               uuid.UUID
+	ReportID         uuid.UUID
+	Body             string
+	CreatedAt        time.Time
+	AuthorID         uuid.UUID
+	AuthorName       string
+	AuthorIsStaff    bool
+	AuthorIsLandlord bool
+}
+
 type Role struct {
 	Code      string
 	Seniority int16

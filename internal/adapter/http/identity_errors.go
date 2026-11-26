@@ -38,6 +38,14 @@ func MapIdentityError(err error) error {
 		return apperr.RefreshInvalid()
 	case errors.Is(err, domain.ErrVerificationInvalid):
 		return apperr.VerificationInvalid()
+	case errors.Is(err, domain.ErrSocialCodeInvalid):
+		return apperr.SocialCodeInvalid()
+	case errors.Is(err, domain.ErrProviderUnavailable):
+		return apperr.NotFound()
+	case errors.Is(err, domain.ErrLastSignInMethod):
+		return apperr.Invalid(apperr.Field{Name: "provider", Rule: apperr.RuleLastSignInMethod})
+	case errors.Is(err, domain.ErrNotLinked):
+		return apperr.Invalid(apperr.Field{Name: "provider", Rule: apperr.RuleNotLinked})
 	case errors.Is(err, shared.ErrUnavailable):
 		return apperr.Busy(err)
 	}

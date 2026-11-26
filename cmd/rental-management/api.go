@@ -34,6 +34,7 @@ import (
 	paymenthttp "rental-management/internal/adapter/http/payment"
 	planhttp "rental-management/internal/adapter/http/plan"
 	propertyhttp "rental-management/internal/adapter/http/property"
+	reporthttp "rental-management/internal/adapter/http/report"
 	statshttp "rental-management/internal/adapter/http/stats"
 	"rental-management/internal/adapter/imageproc"
 	mailadapter "rental-management/internal/adapter/mail"
@@ -68,6 +69,9 @@ import (
 	"rental-management/pkg/secretbox"
 	"rental-management/pkg/storage"
 )
+
+// reportSocketQueue is how many frames may wait for one report socket before it is dropped as too slow.
+const reportSocketQueue = 32
 
 // runAPI serves the HTTP API until ctx is cancelled, then drains in-flight requests.
 func runAPI(ctx context.Context) error {
@@ -113,6 +117,7 @@ func runAPI(ctx context.Context) error {
 		return err
 	}
 	authenticator := httpadapter.NewAuthenticator(auth)
+	social := newSocial(cfg, auth, pool, rdb)
 	locations := locationuc.NewLocations(locationpg.NewLocationRepository(pool))
 
 	files, closeFiles, err := openStorage(cfg)
@@ -166,6 +171,21 @@ func runAPI(ctx context.Context) error {
 		return err
 	}
 
+	// The live conversations of reports: sockets are held by the hub of this instance, frames travel between instances
+	// through Redis.
+	reportHub := realtime.NewReportHub(cfg.ReportWSMaxSocketsPerUser, cfg.ReportWSMaxSocketsPerReport, reportSocketQueue)
+	reportBroadcaster := redisstore.NewReportBroadcaster(rdb, cfg.RedisKeyPrefix, log)
+	go func() {
+		if err := reportBroadcaster.Listen(listenCtx, reportHub.Deliver); err != nil {
+			log.Error("listen for report frames", "error", err)
+		}
+	}()
+	reports := newReporting(log, pool, inbox.deliveries, reporthttp.NewEventPublisher(reportBroadcaster))
+	reportSockets := reporthttp.NewSocketHandler(reports.reports, redisstore.NewStreamTickets(rdb, cfg.RedisKeyPrefix, cfg.RealtimeTicketTTL), reportHub,
+		reporthttp.SocketSettings{
+			Heartbeat: cfg.RealtimeHeartbeat, MaxAge: cfg.RealtimeStreamMaxAge, WriteTimeout: cfg.ReportWSWriteTimeout,
+			MaxMessageBytes: int64(cfg.ReportWSMaxMessageBytes), FramesPerMinute: cfg.ReportWSMessagesPerMinute, AllowedOrigins: cfg.CORSAllowedOrigins,
+		}, log)
 	trail := newAudit(cfg, log, pool)
 	numbers := newStats(cfg, log, pool, redisstore.NewStatsCache(rdb, cfg.RedisKeyPrefix))
 	staff := newAdmin(cfg, log, pool, adminPorts{rdb: rdb, notify: inbox.deliveries, buildings: properties.buildings})
@@ -179,7 +199,7 @@ func runAPI(ctx context.Context) error {
 			Catalog:        catalog,
 			RequestTimeout: cfg.RequestTimeout,
 			CORSOrigins:    cfg.CORSAllowedOrigins,
-			LongLived:      []string{notificationhttp.StreamPath},
+			LongLived:      []string{notificationhttp.StreamPath, reporthttp.SocketPath},
 			Ready:          ready,
 			Modules: []func(*gin.RouterGroup){
 				func(v1 *gin.RouterGroup) {
@@ -188,6 +208,7 @@ func runAPI(ctx context.Context) error {
 				},
 				func(v1 *gin.RouterGroup) {
 					identityhttp.MountAuth(v1, identityhttp.NewAuthHandler(auth, httpx.NewBinder(), limiter), authenticator, limiter)
+					identityhttp.MountSocial(v1, identityhttp.NewSocialHandler(social, httpx.NewBinder(), cfg.WebURL), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
 					binder := httpx.NewBinder()
@@ -248,6 +269,10 @@ func runAPI(ctx context.Context) error {
 						adminhttp.NewPersonalDataHandler(staff.personal, binder), authenticator, limiter)
 				},
 				func(v1 *gin.RouterGroup) {
+					reporthttp.MountReports(v1, reporthttp.NewReportHandler(reports.reports, httpx.NewBinder()), authenticator)
+					reporthttp.MountReportSocket(v1, reportSockets, authenticator)
+				},
+				func(v1 *gin.RouterGroup) {
 					audithttp.Mount(v1, audithttp.NewHandler(trail.reader), authenticator)
 				},
 				func(v1 *gin.RouterGroup) {
@@ -267,7 +292,8 @@ func runAPI(ctx context.Context) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	srv.RegisterOnShutdown(hub.Close) // open streams would otherwise hold the drain until the timeout
+	srv.RegisterOnShutdown(hub.Close)       // open streams would otherwise hold the drain until the timeout
+	srv.RegisterOnShutdown(reportHub.Close) // hijacked sockets are not tracked by Shutdown: close them with a going-away frame
 
 	serveErr := make(chan error, 1)
 	go func() {

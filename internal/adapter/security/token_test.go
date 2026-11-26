@@ -7,6 +7,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+
+	"rental-management/internal/domain/identity"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef"
@@ -167,5 +169,18 @@ func TestShareTokensAre64CharactersLongAndOnlyTheirHashIsLookedUp(t *testing.T) 
 	}
 	if other, _, _ := tokens.New(); other == token {
 		t.Error("tokens must be random")
+	}
+}
+
+func TestOpaqueTokensCanServeAsPKCEVerifiers(t *testing.T) {
+	// Social login uses an opaque token as the PKCE code verifier: it must be one RFC 7636 accepts.
+	for range 20 {
+		raw, _, err := OpaqueTokens{}.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !identity.ValidPKCEVerifier(raw) {
+			t.Fatalf("%q is not a valid PKCE verifier", raw)
+		}
 	}
 }

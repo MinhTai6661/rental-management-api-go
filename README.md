@@ -76,6 +76,9 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `PERMISSION_CACHE_TTL` | `60s` | in-process cache of role -> permissions |
 | `EMAIL_VERIFICATION_TTL` | `24h` | |
 | `EMAIL_RESEND_COOLDOWN` | `60s` | |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` | - | social login with Google; **on only when both id and secret are set** (one without the other is a start-up error); the redirect URL (`<api>/v1/auth/google/callback`) is then required and must be http(s) |
+| `ZALO_APP_ID` / `ZALO_APP_SECRET` / `ZALO_REDIRECT_URL` | - | the same for Zalo (`<api>/v1/auth/zalo/callback`); `ZALO_APP_ID` is the numeric App ID of developers.zalo.me |
+| `SOCIAL_STATE_TTL` / `SOCIAL_LOGIN_CODE_TTL` | `10m` / `60s` | how long a round trip to a provider may take / the life of the one-time code the web trades for tokens. The secrets are never logged or echoed in an error |
 | `WEB_URL` | `http://localhost:2001` | links in emails point here (`/verify-email?token=...`) |
 | `SMTP_HOST` | - | empty = emails are only logged. **Required when `APP_ENV=production`**: otherwise the log would hold verification links |
 | `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` | `1025` / - / - | |
@@ -100,6 +103,10 @@ compose stack sets working development defaults itself. Durations use Go syntax 
 | `REALTIME_TICKET_TTL` / `REALTIME_HEARTBEAT` / `REALTIME_STREAM_MAX_AGE` | `60s` / `25s` / `15m` | how long a stream ticket works / how often an idle stream gets a `: ping` / how long one stream lasts before it ends with `expired` (keep it at most the access-token life: a revoked session loses its stream within one token life) |
 | `WORKER_TICK` / `WORKER_DISPATCH_INTERVAL` / `WORKER_DAILY_INTERVAL` | `30s` / `1m` / `0s` | how often the worker looks at its jobs / how often it delivers due announcements / when above zero, an interval that replaces the daily times of the daily jobs (tests and demos only) |
 | `REALTIME_MAX_STREAMS_PER_USER` | `5` | open event streams one person may hold on one API instance (1-100); the next one is a 429 |
+| `REPORT_WS_MAX_MESSAGE_BYTES` | `8192` | the largest frame a client may send on a report conversation socket (512 to 1048576); a bigger one closes the socket with 1009 |
+| `REPORT_WS_MESSAGES_PER_MINUTE` | `60` | frames (messages and typing) one socket may send in a minute (1-6000); past it the socket is closed with 1008 |
+| `REPORT_WS_MAX_SOCKETS_PER_USER` / `REPORT_WS_MAX_SOCKETS_PER_REPORT` | `10` / `10` | conversation sockets one person / one report may hold on one API instance (1-100); the next one is a 429 |
+| `REPORT_WS_WRITE_TIMEOUT` | `10s` | how long one write to a conversation socket may take (1s-1m); the ping, the ticket and the lifetime of a socket are the `REALTIME_*` values |
 | `NOTIFICATION_RETENTION_DAYS` | `90` | how long a notification is kept before `notifications-prune` deletes it (1-3650) |
 | `AUDIT_IMPORTANT_RETENTION_MONTHS` / `AUDIT_ROUTINE_RETENTION_DAYS` / `AUDIT_PARTITIONS_AHEAD` | `24` / `90` / `3` | how long the two tiers of the audit trail are kept (`audit-maintain` drops whole monthly partitions past it; 1-240 months / 1-3650 days) and how many months after the current one get a partition in advance (1-24) |
 | `STATS_CACHE_SECONDS` | `900` | how long a landlord's statistics are kept in Redis before they are worked out again (0 = no cache, at most 86400); a change shows only when the answer expires (the platform's and the system's figures are never cached) |
@@ -173,6 +180,7 @@ internal/
       contract/               (package contracthttp) contract, renter and invitation handlers, routes, bodies (partial update), domain error -> apperr mapping
       listing/                (package listinghttp) a landlord's listings, the review routes and the search routes (renters and guests), bodies (partial update), domain error -> apperr mapping
       plan/                   (package planhttp) catalog, own subscription, admin subscription and catalog handlers, routes, bodies (partial update), domain error -> apperr mapping
+      report/                 (package reporthttp) the report routes, the conversation WebSocket (protocol, events publisher, socket handler; the only place that imports `gorilla/websocket`), domain error -> apperr mapping
       testenv/                response helpers of the HTTP integration tests, shared by the features
     persistence/postgres/     (package postgres) what the repositories share: TxManager, error translation (Translate), context-bound queries (Queries); never imports a feature folder
       listing/                (package listingpg) listing repository, the read-only views of rooms listings need, and the search of find rooms (offers, landlord cards)
@@ -182,9 +190,10 @@ internal/
       property/               (package propertypg) building, room, charge and media repositories, row <-> domain mapping
       contract/               (package contractpg) contract and invitation repositories and the read-only room view contracts need, row <-> domain mapping
       sqlc/                   the one generated sqlc package (all queries of db/queries)
-    redis/                    (package redisstore) the revoked tokens and sessions store; realtime.go: the Pub/Sub broadcaster and the one-time stream tickets
-    realtime/                 the in-memory hub that hands server-sent events to the streams open on this instance (stdlib only)
+    redis/                    (package redisstore) the revoked tokens and sessions store; social.go: the one-use state of a round trip to a provider and the one-time login codes; realtime.go: the Pub/Sub broadcaster and the one-time stream tickets; report_realtime.go: the per-report Pub/Sub of conversations
+    realtime/                 the in-memory hubs that hand server-sent events to the streams of a user, and the frames of a report's conversation to its sockets, open on this instance (stdlib only; `reports.go`)
     security/                 argon2id password hasher, JWT access tokens, opaque random tokens
+    oauth/                    (package oauthadapter) the social login providers: Google on golang.org/x/oauth2 (the only importer, enforced by depguard), Zalo on a small net/http client
     mail/                     (package mailadapter) the verification email and the invitation email on top of pkg/mail
     snapshot/locationdata/    the provinces/wards snapshot embedded in the binary (locations.json.gz) and its decoder
     filestore/                the picture FileStore port on top of pkg/storage (local disk, S3/R2 or memory)
@@ -308,6 +317,13 @@ has no meta. **Errors** are `{"error": {"code", "message", "fields"}}`: `code` i
 | POST | `/v1/auth/logout-all` | bearer | 204 | revokes every open session of the account |
 | POST | `/v1/auth/switch-role` | bearer, 10/min | 200 `{user, tokens}` | body `{role, refresh_token}`; new session in that role |
 | PUT | `/v1/auth/password` | bearer, 5/min | 204 | body `{current_password, new_password}`; closes the other sessions |
+| GET | `/v1/auth/providers` | public, 30/min per address (`auth-social`) | 200 `{providers: [{provider, requires_matching_email}]}` | the providers that are switched on, so the web draws one button each (Go's replacement of Laravel's `auth.social_providers` in `/config`) |
+| GET | `/v1/auth/google`, `/v1/auth/zalo` | public, 30/min per address (`auth-social`) | 302 to the provider | `?redirect=<relative path>` is where the web lands after a login (default `dashboard`; anything but letters, digits, `/ _ -` is replaced); 404 when the provider is not enabled |
+| GET | `/v1/auth/google/callback`, `/v1/auth/zalo/callback` | public, 30/min per address | 302 to the web app | the provider's redirect target; see [Social login](#social-login); `Cache-Control: no-store`, `Referrer-Policy: no-referrer` |
+| POST | `/v1/auth/social/exchange` | public, 30/min per address | 200 `{user, tokens}` | body `{code}`; the one-time code of the redirect becomes a normal login; 400 `auth.social_code_invalid` |
+| GET | `/v1/me/oauth-accounts` | bearer (any role) | 200 `{has_password, providers: [{provider, linked, linked_at, can_unlink, unlinked, requires_matching_email}]}` | enabled providers only |
+| POST | `/v1/me/oauth-accounts/{provider}` | bearer, 20/hour per account (`oauth-link`) | 200 `{url}` | the URL the web opens to link the provider; 404 when not enabled |
+| DELETE | `/v1/me/oauth-accounts/{provider}` | bearer | 204 | 422 `provider` rule `last_sign_in_method` / `not_linked` |
 | PUT | `/v1/me/preferences` | bearer (any role), 10/min per address | 200 user | body `{accepts_invitations?}` (absent = unchanged; not a boolean = 400); `false` makes the account unfindable by landlords and stops invitation emails to its address |
 
 Register (`POST /v1/auth/register`):
@@ -996,7 +1012,7 @@ Rules: [`docs/go-business-rules.md`](docs/go-business-rules.md) section 1 and th
 | POST | `/v1/profile/accept-terms` | signed in | stores the version in force |
 | GET | `/v1/profile/export` | signed in; **5/hour** | JSON download of the caller's data (no proofs, nothing about others) |
 | GET | `/v1/profile/erasure-check` | signed in | `{blockers[]}`: `running_rental_as_tenant`, `running_contract_as_landlord` |
-| DELETE | `/v1/profile` `{password, confirm}` | signed in; **5/hour** | erasure; staff, a wrong password or a blocker is a 422 |
+| DELETE | `/v1/profile` `{password, confirm}` | signed in; **5/hour** | erasure (also deletes the account's social sign-in links); staff, a wrong password or a blocker is a 422 |
 
 The version people must accept is the newest legal document of any kind (`TERMS_VERSION` until one is published); `GET /v1/auth/me`
 (`terms.current_version`, `needs_acceptance`) and registration use it through `identity.TermsVersions`, and staff are never asked.
@@ -1024,6 +1040,69 @@ draft they wrote, and writes contract offers per capability. Marking bills paid 
 never sees or touches the contract, bills or payments of a contract they hold as tenant (404). The landlord is told (`manager_bill_sent|edited`) when the
 hand-over asks for it; the audit entries carry `actor_role=manager` and the landlord as owner. A manager who loses every room has the offers they
 wrote that still wait withdrawn.
+
+### Reports (problem reports with a conversation)
+
+The fourteenth context, `report`: `domain/report` (kinds, statuses, who a report goes to and the pure visibility rules), `usecase/report`,
+`adapter/http/report`, `adapter/persistence/postgres/report`, migration `00016` (`reports`, `report_replies` and two read views), linter rules
+`report-does-not-know-other-contexts`, `other-contexts-do-not-know-report` and `websocket-only-in-the-report-adapter-and-realtime`. A tenant reports on a
+**room** they rent or rented (it goes to the landlord of that room) or on a **feature** of the app (it goes to the admins); a landlord reports only on a feature.
+The author and the recipient (the room's landlord, an admin for a feature report; a super admin is the recipient of everything) write as many messages as
+they like; **only the recipient** changes the status (`open|in_progress|resolved`). A tenant **deletes** a report they wrote with a *soft* delete: it is gone for
+them (404) while the recipient keeps it, `deleted: true`, read only (writing or changing the status: 403 `report.read_only`).
+
+| Method | Path | Permission | Success | Notes |
+|---|---|---|---|---|
+| GET | `/v1/reports` | `reports.view` | 200 list `meta {page, per_page, total}` | the reports the caller wrote, newest first; `?status=`, `?type=room\|feature`, `?search=` (subject or body, not a pattern), `?page`, `?per_page` (default 10) |
+| GET | `/v1/reports/inbox` | `reports.update` | 200 list | the reports the caller has to answer (deleted ones too, `deleted: true`); a landlord's inbox is the room reports of their rooms (acting as landlord), an admin's the feature reports, a super admin's all |
+| POST | `/v1/reports` | `reports.create` | 201 the report | `{type: room\|feature, room_id?, subject <= 150, body <= 5000}`; 403 for a landlord reporting a room; 422 `room_id` when a room report names no room (`required`) or a room the tenant never rented (`room_not_yours`); the recipient is told (`report_received`) |
+| GET | `/v1/reports/{id}` | `reports.view` | 200 the report | `{id, type, subject, body, status, deleted, created_at, reporter {id, name, role}, room {id, name} \| null, replies_count}`; 404 when the caller may not see it |
+| GET | `/v1/reports/{id}/replies` | `reports.view` | 200 list | the conversation **newest first**, `?per_page` (default 20, at most 50), with `total`; each `{id, body, created_at, author {id, name, role}}` |
+| POST | `/v1/reports/{id}/replies` | `reports.view` | 201 the report | `{body <= 5000}`; the same use case as a message sent over the socket; 404 for a stranger, 403 `report.read_only` once deleted |
+| PUT | `/v1/reports/{id}/status` | `reports.update` | 200 the report | `{status}`; 403 for the author, 403 `report.read_only` once deleted; resolving tells the author |
+| DELETE | `/v1/reports/{id}` | `reports.view` | 204 | a tenant deletes their own report (soft); 403 for the recipient |
+| GET | `/v1/reports/{id}/ws` | the one-time `?ticket` (or a bearer token) | 101 WebSocket | the live conversation, below |
+
+`role` of a person is the side they wrote from (`tenant`, `landlord`, `admin`); a landlord who is also the tenant of the room is a `tenant` there.
+**Notifications** (the real inbox, link `/reports?open={id}`): `report_received` to the recipient (the landlord, or every admin) when a report is written;
+`report_replied` to the recipient when the author writes again; `report_answered` to the author when the recipient writes or resolves. **Audit**:
+`report.created|replied|status_changed|deleted` (a message is recorded only with its length, never its text; `status_changed` carries `{from, to}`).
+
+**Live conversation (WebSocket).** A report conversation is two-way and chatty (messages, typing, acks), so it uses a WebSocket (library
+`github.com/gorilla/websocket` v1.5.3); notifications stay on server-sent events, which are one-way and simpler to keep alive. The ticket flow is the
+notification stream's: `POST /v1/realtime/ticket` gives a one-time ticket (stored hashed in Redis, `GETDEL`, `REALTIME_TICKET_TTL`) bound to the caller
+and the role they act in, then `new WebSocket(".../v1/reports/{id}/ws?ticket=...")`. The ticket is *not* bound to a report: **access is checked when the socket
+opens** with the report rules (only the author, the recipient and a super admin; anybody else gets the same 404 as `GET /v1/reports/{id}`; a deleted report
+can be followed by its recipient and no longer by its author). The `Origin` header must be one of `CORS_ALLOWED_ORIGINS` (403 otherwise, and the ticket is
+not used up); a request without an `Origin` is not a browser page and is let through. Over `REPORT_WS_MAX_SOCKETS_PER_USER` or `..._PER_REPORT`: 429.
+
+JSON text frames, protocol version 1 (the `ready` frame says so):
+
+| Client sends | Meaning |
+|---|---|
+| `{"type":"reply","client_id":"<uuid>","body":"..."}` | a message; goes through the same use case as `POST .../replies` (validation, permissions, notification, audit, storage) |
+| `{"type":"typing"}` | ephemeral, never stored; at most one per second is passed on |
+
+| Server sends | Meaning |
+|---|---|
+| `{"type":"ready","v":1,"report_id":"...","status":"open","deleted":false}` | first frame; reload the conversation over HTTP now (nothing is replayed) |
+| `{"type":"reply","reply":{"id","body","created_at","author":{"id","name","role"}}}` | a message was added (to **every** socket on the report, the sender's other tabs too: dedupe by `reply.id`; the same object as the HTTP replies list; also for a message sent by `POST .../replies`) |
+| `{"type":"ack","client_id":"...","reply_id":"..."}` | to the sender only: the message was stored |
+| `{"type":"status","status":"resolved"}` | the recipient changed the status |
+| `{"type":"typing","user_id":"..."}` | to the **other** party only |
+| `{"type":"error","code":"report.read_only","message":"...","fields":{...},"client_id":"..."}` | a refused frame, with the API's codes and the message in the language of the upgrade request (`validation.failed`, `request.malformed`, `report.read_only`, `resource.not_found`, `auth.forbidden`...); the socket stays open |
+
+Limits: a frame over `REPORT_WS_MAX_MESSAGE_BYTES` closes the socket (1009); more than `REPORT_WS_MESSAGES_PER_MINUTE` frames, a binary frame or a client
+that does not read (its queue of 16 acks/errors fills) closes it (1008 / 1003); every write has `REPORT_WS_WRITE_TIMEOUT`; the server pings every
+`REALTIME_HEARTBEAT` and drops a socket that answered nothing for twice that long (the read deadline is refreshed by every frame and pong); a socket lasts at
+most `REALTIME_STREAM_MAX_AGE` (going away, 1001: the client reconnects with a new ticket, which is how a revoked session or a disabled account loses its
+sockets within one token life); API shutdown closes every socket with 1001 (`ReportHub.Close`). Exactly one goroutine reads and one writes each socket; a
+full per-socket queue closes the socket instead of blocking the hub.
+
+**Fan-out.** The use case publishes through its `ReportEvents` port; `reporthttp.EventPublisher` turns the event into the frame and publishes it on Redis
+channel `<REDIS_KEY_PREFIX>report:{id}`; every API instance listens to the pattern `report:*` (`redisstore.ReportBroadcaster`) and hands the frame to the
+sockets it holds on that report (`realtime.ReportHub`, keyed by report id). A frame nobody is connected for is lost; the socket reloads over HTTP.
+The demo seed (`seed -demo`) writes a room report with a short conversation and a feature report with an admin answer.
 
 ### Audit trail
 
@@ -1118,6 +1197,7 @@ the two locale files differ.
 | `auth.account_inactive` | 403 | the account is disabled |
 | `auth.forbidden` | 403 | missing permission or role |
 | `auth.verification_invalid` | 400 | verification token unknown, expired or already used |
+| `auth.social_code_invalid` | 400 | the one-time social login code is unknown, used or expired |
 | `location.province_not_found` | 404 | unknown province code |
 | `resource.not_found` | 404 | generic not found |
 | `http.route_not_found` / `http.method_not_allowed` | 404 / 405 | unknown route / wrong method (`Allow` header set) |
@@ -1291,6 +1371,73 @@ unchanged (for a one-off run or an external cron).
   hashed email. Set up trusted proxies before putting a reverse proxy in front (gin currently trusts none, so
   `X-Forwarded-For` cannot be spoofed).
 
+## Social login
+
+Signing in (and up) with **Google** or **Zalo**, and linking them to an existing account. Ported from the Laravel
+`SocialAuthService`; the rules and the web-facing values are the same, the plumbing is Go's.
+
+**Where it lives.** It is part of the identity context, not a new one: a social sign-in ends in the same session code as
+a password login (`Auth.openSessionVia`: session row, refresh token, active role, access token, audit entry), and a
+second context would have had to copy it or reach into identity through a bridge. Domain `identity/social.go` (pure
+rules and errors), use cases `usecase/identity/social*.go` (`Social`, on top of `Auth`), HTTP `adapter/http/identity/social.go`,
+tables in `adapter/persistence/postgres/identity` (`oauth_repository.go`), Redis stores in `adapter/redis/social.go`,
+providers in `adapter/oauth`. `cmd/rental-management/social.go` registers the providers that have credentials.
+
+**Ports** (`usecase/identity/social_ports.go`): `SocialProvider` (code, vouches-for-email, authorization URL with state and
+PKCE, profile from the callback code), `SocialStateStore` and `LoginCodeStore` (Redis, plain JSON, one use through
+`GETDEL`, only the hash of the key is a Redis key), `OAuthAccountRepository`, `SocialUserStore` (what the use cases need of the
+account repository: create without a password, confirm an email from a provider). The registry (`SocialRegistry`) holds only the
+providers that are switched on: others are neither offered nor reachable (404).
+
+**Login.** `GET /v1/auth/{provider}?redirect=` stores `{provider, intent: login, return path, PKCE verifier}` in Redis (10 minutes,
+one use; the key is the OAuth `state`) and redirects to the provider with only the S256 challenge. The provider calls
+`GET /v1/auth/{provider}/callback?state&code`: the state is taken (a missing, reused, expired or forged one, a provider that
+differs from the state's, no code (the person cancelled) or a provider error all end as `social_failed`, the login-CSRF
+guard). The profile gives the account: (1) the account linked to `(provider, provider user id)`; else (2) when the provider
+**vouches for the email** (Google's `email_verified`) the account with that email, which then gets the provider linked, and
+an email the account never verified becomes verified and **its password is removed** (somebody else may have set it while the
+address was unverified); else (3) a **new tenant account** (no password; an email only when vouched, and then verified; the terms
+are not accepted yet, so the web asks once). Refused: a **disabled or deleted** account (`account_inactive`; an email still held
+by a deleted account is never taken over), a **staff** account (`link_staff`, stricter than Laravel which let a staff email
+merge), a provider the person **unlinked** (`link_unlinked`, also when it comes in through the email), an account that has another
+account of that provider linked (`link_provider_taken`). The redirect carries **only a one-time code**: `WEB_URL/<redirect>?code=`;
+failures go to `WEB_URL/login?error=<value>`. `POST /v1/auth/social/exchange {code}` redeems the code (Redis, `SOCIAL_LOGIN_CODE_TTL`,
+single use) into `{user, tokens}` exactly like a login (role = the one used last, else the most senior; an account disabled since
+the callback is refused), with `via: google|zalo` in the `auth.login` audit entry (a sign-up also writes `auth.register` with the `via`).
+
+**Linking.** `POST /v1/me/oauth-accounts/{provider}` (the browser cannot send a bearer on a redirect, so the caller is kept in the state)
+returns `{url}`; the callback lands on `WEB_URL/profile?linked=<provider>` or `?link_error=<value>&provider=<provider>`. Rules
+(`DecideLink`, `LinkEmailRefusal`): a provider account opens one account (`link_elsewhere`); an account has one account of each provider
+(`link_provider_taken`; after unlinking another one may take its place); **linking never changes the account's email**: a provider that gives
+an email (Google) links only when it equals the account's (case-insensitive: `link_email_mismatch`), and an account without an email
+cannot link it (`link_no_email`); Zalo gives none and links freely; staff cannot link (`link_staff`); linking again what is linked is a no-op.
+`DELETE` does not delete the row: it sets `unlinked_at`, so the provider cannot sign in by itself any more (`link_unlinked`) until the person, signed in,
+links it again. The **last way to sign in cannot be removed** (`SignInMethods.CanUnlink`: a password counts as one) and the rows are locked while this is decided.
+Audit: `auth.oauth_linked` (`provider`, `again`) and `auth.oauth_unlinked` (`provider`).
+
+**Values the web reads** (`error` on `/login`, `link_error` on `/profile`): `social_failed`, `account_inactive`, `link_staff`, `link_unlinked`,
+`link_provider_taken`, `link_elsewhere`, `link_email_mismatch`, `link_no_email`.
+
+**Libraries.** Google uses `golang.org/x/oauth2` (+ `/google` endpoint), v0.38.0: authorization code with PKCE (`S256ChallengeOption`,
+`VerifierOption`), the client credentials and the token request are the library's. The profile comes from the OpenID Connect **userinfo endpoint**
+(`sub`, `email`, `email_verified`, `name`) called with the access token we just obtained from Google over TLS, rather than verifying an ID token:
+it needs no signature or key-rotation handling and no extra dependency, and the answer is as trustworthy as the token exchange itself. Zalo is not
+standard OAuth2 (`secret_key` header on the token request, v4 endpoints, `access_token` header on `graph.zalo.me/v2.0/me`, errors with HTTP 200 and a
+non-zero `error`), so it is a small `net/http` client behind an interface (timeouts of 10 s, answers capped at 1 MiB). Both are tested against `httptest`
+fakes. `go.mod` gained `golang.org/x/oauth2 v0.38.0` and its one dependency `cloud.google.com/go/compute/metadata v0.3.0`; no existing module changed version.
+depguard forbids importing `golang.org/x/oauth2` outside `adapter/oauth`, and `net/http` in domain and use cases.
+
+**Rate limits.** The routes of a person who is not signed in share the named bucket `auth-social` (30 per minute per address; the login limit is per address
+and email, which these routes do not have); the link route is 20 per hour per account.
+
+**Deviations from Laravel.** No avatar is imported (the Go users have no avatar column yet). A half-configured provider (id without secret) is a start-up error instead
+of silently off. A staff account is refused at sign-in too. `/v1/auth/providers` replaces the provider list of `/config`. One route pair per provider instead of a
+`{provider}` wildcard (no clash with `/auth/me`). The exchange code and the state are Redis-only plain data; the code is not tied to the callback's IP.
+
+**Known gaps.** No avatar from the provider; no Zalo OA/ZNS/Mini App; no Facebook/Apple; no "unlink and delete the provider's tokens" call to the provider (nothing of the
+provider's tokens is kept: they are used once); the redirect target of a login is validated by pattern, not against a list of web routes; the exchange code can be redeemed from any
+client address (it is single use and lives 60 s).
+
 ## Testing
 
 - **Unit tests** (`make test`, part of `make check`): pure rules, config, i18n, JSON shapes. No Docker needed.
@@ -1369,10 +1516,12 @@ reach, publish/unpublish/recall, scheduling with `announcements-dispatch-due`, t
 `/v1/media` route. **Batch 4 is done**: realtime push with server-sent events (ticket, stream, hub, Redis Pub/Sub, heartbeat, 15-minute streams).
 Still to come in this phase: the worker.
 
+Done: phase 14, `report` (migration `00016`; reports with a conversation, soft delete, the inbox, status by the recipient, the notifications and audit entries, the WebSocket conversation with Redis fan-out; see [Reports](#reports-problem-reports-with-a-conversation)).
 Done: phase 13, `stats` (no migration; the landlord's dashboard, revenue, occupancy, rooms, buildings and utilities, the platform's overview and growth, the system's overview; see [Statistics](#statistics)).
 
-Later phases (each module: migration, queries, service, handlers, tests): `report`, plus
-admin user management, landlord applications, manager hand-over and invitations, and social login.
+Done: phase 15, social login (migration `00017`, `oauth_accounts`; Google and Zalo sign-in and sign-up, linking and unlinking, the one-time exchange code; see [Social login](#social-login)).
+
+Later phases: none planned beyond the [known gaps](#known-gaps).
 
 Pure rules of the Laravel project to port (as Go table tests, taking its `tests/Unit` cases as the starting point):
 
@@ -1391,9 +1540,12 @@ Pure rules of the Laravel project to port (as Go table tests, taking its `tests/
 | Statistics: `MonthRange`, `OccupancyCalculator`, `Ratio` | `internal/stats` |
 | Announcement: `AudienceCriteria`, `DayRange`, `PopupVisibility` | `internal/notification` |
 | Audit: `MoneyRedaction`, `AuditAction`, payload scrubbing | `internal/domain/audit` (ported and tested) |
-| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/domain/identity` (social login) |
+| Auth: `Pkce`, `ProviderLink`, `SignInMethods` | `internal/domain/identity/social.go` (`PKCEChallenge`, `ValidPKCEVerifier`, `DecideLink` + `LinkEmailRefusal` = `ProviderLink::decide|emailRefusal`, `SignInMethods`; table tests ported, incl. the RFC 7636 vector) |
+| `SocialAuthService`, `SocialStateStore`, `SocialProviderRegistry`, `SocialProvider` | `usecase/identity` (`social.go`, `social_ports.go`, `social_registry.go`), `adapter/redis/social.go`, `adapter/oauth` |
+| `ZaloClient`/`ZaloOAuth`/`ZaloGraph` | `adapter/oauth/zalo_client.go` (one client behind the `zaloAPI` interface) and `zalo.go` |
 | Invitation: `InvitationAudience` | `internal/invitation` |
 | Legal: `RichText` | `internal/legal` |
+| Report: `ReportPolicy`, `Report::roleOf|scopeAddressedTo`, `ReportService` | `internal/domain/report` (`rules.go`, ported and tested) and `internal/usecase/report` |
 | Support: `RoleAccess` | `pkg/authz` (`MixesStaffWithOthers` exists; `assignableBy`, `canManage` with admin user management) |
 
 Route skeleton for later phases (all under `/v1`): landlord `/buildings/{id}/rooms`, `/rooms/{id}`,
@@ -1414,6 +1566,13 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 
 ## Known gaps
 
+- **Reports**: the typing indicator is a frame of the socket, not the `POST /reports/{id}/typing` of Laravel (the socket is the only way to type live). Deleting a
+  report publishes nothing live (the recipient finds it read only when they next load it); a report that gets a status change that is the same status is a no-op
+  (Laravel recorded and announced it again). A non-party gets 404, not Laravel's 403, and a super admin cannot reply to or change a deleted report (Laravel's
+  super admin bypass ignored the soft delete) nor delete somebody else's. The ticket is not bound to a report (access is re-checked at upgrade), a socket of a
+  disabled account or revoked session lives until `REALTIME_STREAM_MAX_AGE`, and the `report.updated` event of the notification stream is gone: use the socket.
+  There is no email for a report. The platform statistics and the personal-data export still have no `reports` block.
+
 - **Stats**: a landlord's figures are cached for `STATS_CACHE_SECONDS` and are **not** dropped when an invoice, payment, contract, room or meter reading changes
   (no event hook yet), so a payment shows after at most 15 minutes by default (set `STATS_CACHE_SECONDS=0` to turn it off, or add an invalidation by
   landlord in `bridges*.go` later). A manager has no `stats.view` (Laravel gives none either), so there are no figures for the rooms a manager runs.
@@ -1425,7 +1584,7 @@ as each Go module lands; the Laravel API keeps serving the web until then.
 
 - **Audit trail**: not recorded yet, because the context or the flow does not exist or has no audit port: rooms and buildings (`room.*`,
   `building.*`: the property use cases have no audit port; the room's history today holds only listing, contract, invoice and payment entries),
-  reports, social login and password reset (`auth.oauth_*`, `auth.password_reset*`), the profile and avatar
+  password reset (`auth.password_reset*`; `auth.oauth_linked|unlinked` are recorded now), the profile and avatar
   (`user.profile_updated|avatar_changed`), the invitations preference and the opt-out link (`user.invitations_preference_changed`,
   `invitation.opted_out`), the contract-invitation approve/reject of a manager. The action catalog already holds those names. The actions have
   no translated labels in the API (the web labels them by `action`). The history routes are for the owning landlord only (a manager the
@@ -1443,12 +1602,12 @@ as each Go module lands; the Laravel API keeps serving the web until then.
   statistics exist (no cache on the popup audience check or the statistics; popups cost up to 20 indexed audience lookups per app open).
   The **worker** is a later batch. Realtime: one shared Pub/Sub channel (every instance sees every event; shard by user hash if it ever
   matters), no replay of missed events (the web reloads on `ready`), the cap of streams per person is per instance, a revoked session keeps
-  its open stream until it expires (at most `REALTIME_STREAM_MAX_AGE`), and nothing but notifications is pushed yet (reports will add a topic). Pictures are not checked for sensitive content on the server, and impressions are
+  its open stream until it expires (at most `REALTIME_STREAM_MAX_AGE`), and the notification stream carries notifications only (report conversations have their own WebSocket, see [Reports](#reports-problem-reports-with-a-conversation)). Pictures are not checked for sensitive content on the server, and impressions are
   one row per person (no per-view history, so no "views per day"). The
   `AuditRecorder` port is declared and no-op. Announcements have no `my_managers` audience (no managers yet), `active_within_days`
   reads `user_sessions.last_used_at`, and a delivery that failed is retried only by `announcements-dispatch-due` (the worker, every minute). There is **no email** for any notification (the contexts' own mail
   ports are separate and mostly no-ops). The daily commands run in the worker.
-  Messages of kinds no context sends yet (reports, managers, landlord applications...) are in the catalog but nothing creates
+  Messages of kinds no context sends yet (landlord applications...) are in the catalog but nothing creates
   them. `audience` is not exposed in the message JSON (the web does not need it: the inbox is already filtered). The inbox has
   no "mute a kind" setting and no per-user rate limit (the sender side bounds what is created).
 

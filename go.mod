@@ -9,6 +9,7 @@ require (
 	github.com/go-redis/redis_rate/v10 v10.0.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/johannesboyne/gofakes3 v1.3.0
 	github.com/kolesa-team/go-webp/v2 v2.0.2
@@ -22,10 +23,12 @@ require (
 	github.com/wneessen/go-mail v0.8.2
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.48.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/text v0.44.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20261006220739-8c912ac31dd4 // indirect
 	github.com/Microsoft/go-winio v0.6.4 // indirect

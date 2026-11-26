@@ -71,7 +71,7 @@ func (r *PersonalDataRepository) Export(ctx context.Context, userID uuid.UUID) (
 }
 
 // Erase deletes or blanks everything personal in the transaction of ctx: open invitations and subscriptions are ended,
-// payment methods, applications, profile, notifications and roles are deleted, and the account is blanked and
+// payment methods, applications, profile, notifications, social sign-in links and roles are deleted, and the account is blanked and
 // removed. Contracts, bills and payments stay, without a name.
 func (r *PersonalDataRepository) Erase(ctx context.Context, userID uuid.UUID, now time.Time) error {
 	q := postgres.Queries(ctx, r.pool)
@@ -86,6 +86,7 @@ func (r *PersonalDataRepository) Erase(ctx context.Context, userID uuid.UUID, no
 		func() error { return q.AdminDeleteLandlordApplicationsOfUser(ctx, userID) },
 		func() error { return q.AdminDeleteLandlordProfile(ctx, userID) },
 		func() error { return q.AdminDeleteNotificationsOfUser(ctx, userID) },
+		func() error { return q.AdminDeleteOAuthAccountsOfUser(ctx, userID) },
 		func() error { return q.AdminDeleteUserRoles(ctx, userID) },
 		func() error {
 			return q.AdminAnonymizeUser(ctx, sqlcgen.AdminAnonymizeUserParams{ID: userID, DisplayName: domain.ErasedName, Now: now})

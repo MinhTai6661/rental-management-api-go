@@ -157,6 +157,11 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "seeded the demo notifications (%d new)\n", told)
+		reported, err := newReporting(log, pool, nil, nil).seeder.SeedDemo(ctx, ids["tenant@rental.test"], ids["landlord@rental.test"], ids["admin@rental.test"])
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "seeded the demo reports (%d new)\n", reported)
 	}
 	return nil
 }

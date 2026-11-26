@@ -37,6 +37,7 @@ const (
 	CodeAccountInactive      = "auth.account_inactive"
 	CodeEmailUnverified      = "auth.email_unverified"
 	CodeVerificationInvalid  = "auth.verification_invalid"
+	CodeSocialCodeInvalid    = "auth.social_code_invalid"
 	CodeForbidden            = "auth.forbidden"
 	CodeProvinceNotFound     = "location.province_not_found"
 	CodeResourceNotFound     = "resource.not_found"
@@ -79,6 +80,7 @@ const (
 	CodePaymentReviewed      = "payment.already_reviewed"
 	CodeAnnouncementRecalled = "announcement.recalled"
 	CodeAnnouncementImageMax = "announcement.image_limit_reached"
+	CodeReportReadOnly       = "report.read_only"
 
 	CodeInvitationInvalid         = "invitation.invalid"
 	CodeInvitationNotPending      = "invitation.not_pending"
@@ -101,6 +103,8 @@ const (
 	RuleRoleNotHeld               = "role_not_held"
 	RulePasswordIncorrect         = "password_incorrect"
 	RulePasswordSame              = "password_same"
+	RuleLastSignInMethod          = "last_sign_in_method"
+	RuleNotLinked                 = "not_linked"
 	RuleMinItems                  = "min_items"
 	RuleMaxItems                  = "max_items"
 	RuleDistinct                  = "distinct"
@@ -145,6 +149,7 @@ const (
 	RuleRoomNotOwned      = "room_not_owned"
 	RuleRoomsManaged      = "rooms_managed"
 	RuleRoomsPending      = "rooms_pending"
+	RuleRoomNotYours      = "room_not_yours"
 	RuleReplaceNotListed  = "replace_not_listed"
 
 	RuleAmountExceedsRemaining = "amount_exceeds_remaining"
@@ -189,7 +194,7 @@ func Codes() []string {
 	return []string{
 		CodeValidationFailed, CodeRequestMalformed, CodeRequestTooLarge, CodeRequestRateLimited,
 		CodeUnauthenticated, CodeInvalidCredentials, CodeRefreshInvalid, CodeAccountInactive, CodeForbidden,
-		CodeEmailUnverified, CodeVerificationInvalid, CodeProvinceNotFound, CodeResourceNotFound, CodeRouteNotFound, CodeMethodNotAllowed,
+		CodeEmailUnverified, CodeVerificationInvalid, CodeSocialCodeInvalid, CodeProvinceNotFound, CodeResourceNotFound, CodeRouteNotFound, CodeMethodNotAllowed,
 		CodeServerBusy, CodeServerInternal, CodeBuildingHasRooms, CodeRoomHasContract, CodeRoomHasListing,
 		CodeRoomStatusLocked, CodeMediaLimitReached, CodeBuildingLimit, CodeRoomLimit, CodeContractTransition,
 		CodeContractRoomOccupied, CodeContractNotVacant, CodeContractRegistered, CodeContractOwnRoom, CodeContractCancelDenied,
@@ -199,6 +204,7 @@ func Codes() []string {
 		CodeInvoiceLocked, CodeInvoiceReviewPending, CodeInvoiceLinkNeedsSent, CodeInvoiceLinkInvalid,
 		CodeInvitationInvalid, CodeInvitationNotPending, CodeInvitationLinkUnavailable, CodeInvitationOwnOffer, CodeInvitationNotAwaiting,
 		CodePaymentNotPayable, CodePaymentReviewed, CodeAnnouncementRecalled, CodeAnnouncementImageMax,
+		CodeReportReadOnly,
 	}
 }
 
@@ -207,7 +213,7 @@ func Rules() []string {
 	return []string{
 		RuleRequired, RuleEmail, RuleMinString, RuleMaxString, RuleMinNumber, RuleMaxNumber, RuleInteger,
 		RuleUUID, RuleOneOf, RuleAccepted, RuleUnique, RuleExists, RuleRoleNotHeld, RulePasswordIncorrect,
-		RulePasswordSame, RuleMinItems, RuleMaxItems, RuleDistinct, RuleImageType, RuleImageDimensions,
+		RulePasswordSame, RuleLastSignInMethod, RuleNotLinked, RuleMinItems, RuleMaxItems, RuleDistinct, RuleImageType, RuleImageDimensions,
 		RuleImageCorrupt, RuleFileTooLarge, RuleBuildingPriceMissing, RuleBuildingPriceInUse, RuleRangeInvalid,
 		RuleRangeTooMany, RuleRangeNameTooLong, RuleNamesTaken, RuleSingleCover, RuleRentalPeriodPair, RuleLTEField,
 		RuleDate, RuleAfterStartDate, RuleDateNotPast, RuleBelowMinMonths, RuleBelowMinDays, RuleFormat, RuleDateTime,
@@ -218,6 +224,7 @@ func Rules() []string {
 		RuleAmountExceedsRemaining, RuleMethodNotAccepted, RuleDateNotFuture, RuleAccountFormat, RulePhoneFormat,
 		RuleTitleBodyPair, RuleOneLanguage, RuleNowhereToGo, RuleCTAIncomplete, RuleURLUnsafe, RuleNoPeople, RuleAudienceEmpty,
 		RuleLinkNotAllowed, RuleAfterOrEqual, RuleMaxDays, RuleMaxMonths,
+		RuleRoomNotYours,
 		RuleStaffRolesMixed, RuleHasActiveContracts, RuleAlreadyLandlord, RuleNotRenter, RuleAlreadyPending, RuleNotReviewable, RuleStaffCannotErase, RuleErasureBlocked, RuleRichTextStructure, RuleRichTextNodeType, RuleRichTextMarkType, RuleRichTextHeadingLevel, RuleRichTextLink, RuleRichTextTooLarge, RuleRichTextNoHeading, RuleRichTextEmpty,
 	}
 }
@@ -302,6 +309,7 @@ func AccountInactive() *Error     { return E(KindForbidden, CodeAccountInactive)
 func Forbidden() *Error           { return E(KindForbidden, CodeForbidden) }
 func EmailUnverified() *Error     { return E(KindForbidden, CodeEmailUnverified) }
 func VerificationInvalid() *Error { return E(KindBadRequest, CodeVerificationInvalid) }
+func SocialCodeInvalid() *Error   { return E(KindBadRequest, CodeSocialCodeInvalid) }
 func NotFound() *Error            { return E(KindNotFound, CodeResourceNotFound) }
 func Malformed() *Error           { return E(KindBadRequest, CodeRequestMalformed) }
 func TooLarge() *Error            { return E(KindTooLarge, CodeRequestTooLarge) }

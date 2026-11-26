@@ -58,3 +58,8 @@ type ResendEmailRequest struct {
 type PreferencesRequest struct {
 	AcceptsInvitations *bool `json:"accepts_invitations"`
 }
+
+// ExchangeRequest is the body of POST /auth/social/exchange.
+type ExchangeRequest struct {
+	Code string `json:"code" validate:"required,max=256"`
+}

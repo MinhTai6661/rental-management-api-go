@@ -74,6 +74,19 @@ type Config struct {
 	EmailVerificationTTL time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
 	EmailResendCooldown  time.Duration `env:"EMAIL_RESEND_COOLDOWN" envDefault:"60s"`
 
+	// Social login. A provider is on only when both its id and its secret are set; the redirect URL is the callback
+	// of this API registered with the provider (http(s)://<api>/v1/auth/<provider>/callback). The secrets are never logged.
+	GoogleClientID     string `env:"GOOGLE_CLIENT_ID"`
+	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET"`
+	GoogleRedirectURL  string `env:"GOOGLE_REDIRECT_URL"`
+	ZaloAppID          string `env:"ZALO_APP_ID"`
+	ZaloAppSecret      string `env:"ZALO_APP_SECRET"`
+	ZaloRedirectURL    string `env:"ZALO_REDIRECT_URL"`
+	// SocialStateTTL is how long a round trip to a provider may take; SocialLoginCodeTTL the life of the one-time
+	// code the web app trades for tokens after it.
+	SocialStateTTL     time.Duration `env:"SOCIAL_STATE_TTL" envDefault:"10m"`
+	SocialLoginCodeTTL time.Duration `env:"SOCIAL_LOGIN_CODE_TTL" envDefault:"60s"`
+
 	// Media: pictures of rooms and buildings. MediaDir is where the files live (a mounted volume in the container),
 	// MediaPublicBaseURL the absolute prefix of every picture URL the API returns.
 	MediaDir                   string `env:"MEDIA_DIR" envDefault:"var/media"`
@@ -141,6 +154,15 @@ type Config struct {
 	RealtimeHeartbeat         time.Duration `env:"REALTIME_HEARTBEAT" envDefault:"25s"`
 	RealtimeStreamMaxAge      time.Duration `env:"REALTIME_STREAM_MAX_AGE" envDefault:"15m"`
 	RealtimeMaxStreamsPerUser int           `env:"REALTIME_MAX_STREAMS_PER_USER" envDefault:"5"`
+
+	// Report conversations (WebSocket, GET /v1/reports/{id}/ws): the largest frame a client may send, how many frames it
+	// may send in a minute, how many sockets one user and one report may hold open on one instance, and how long a write may
+	// take. The heartbeat, the ticket and the lifetime of a socket are the REALTIME_* ones above.
+	ReportWSMaxMessageBytes     int           `env:"REPORT_WS_MAX_MESSAGE_BYTES" envDefault:"8192"`
+	ReportWSMessagesPerMinute   int           `env:"REPORT_WS_MESSAGES_PER_MINUTE" envDefault:"60"`
+	ReportWSMaxSocketsPerUser   int           `env:"REPORT_WS_MAX_SOCKETS_PER_USER" envDefault:"10"`
+	ReportWSMaxSocketsPerReport int           `env:"REPORT_WS_MAX_SOCKETS_PER_REPORT" envDefault:"10"`
+	ReportWSWriteTimeout        time.Duration `env:"REPORT_WS_WRITE_TIMEOUT" envDefault:"10s"`
 
 	// The worker (`rental-management worker`): how often it looks at its jobs, how often it dispatches due announcements,
 	// and (when above zero) an interval that replaces the daily time of day of the daily jobs, for tests and demos.
@@ -257,6 +279,9 @@ func (c Config) validate() error {
 	if err := c.validateDurations(); err != nil {
 		return err
 	}
+	if err := c.validateSocial(); err != nil {
+		return err
+	}
 	return c.validateBackends()
 }
 
@@ -269,6 +294,8 @@ func (c Config) validateDurations() error {
 		"PERMISSION_CACHE_TTL":     c.PermissionCacheTTL,
 		"EMAIL_VERIFICATION_TTL":   c.EmailVerificationTTL,
 		"EMAIL_RESEND_COOLDOWN":    c.EmailResendCooldown,
+		"SOCIAL_STATE_TTL":         c.SocialStateTTL,
+		"SOCIAL_LOGIN_CODE_TTL":    c.SocialLoginCodeTTL,
 		"REALTIME_TICKET_TTL":      c.RealtimeTicketTTL,
 		"REALTIME_HEARTBEAT":       c.RealtimeHeartbeat,
 		"REALTIME_STREAM_MAX_AGE":  c.RealtimeStreamMaxAge,
@@ -286,6 +313,32 @@ func (c Config) validateDurations() error {
 	} {
 		if d < 0 {
 			return fmt.Errorf("%s must not be negative, got %s", name, d)
+		}
+	}
+	return nil
+}
+
+// GoogleEnabled reports whether signing in with Google is configured.
+func (c Config) GoogleEnabled() bool { return c.GoogleClientID != "" && c.GoogleClientSecret != "" }
+
+// ZaloEnabled reports whether signing in with Zalo is configured.
+func (c Config) ZaloEnabled() bool { return c.ZaloAppID != "" && c.ZaloAppSecret != "" }
+
+// validateSocial checks the providers: one with only half of its credentials is a mistake that would silently switch
+// it off, and one that is on needs the callback URL registered with the provider.
+func (c Config) validateSocial() error {
+	for _, p := range []struct{ name, id, secret, redirect string }{
+		{"GOOGLE", c.GoogleClientID, c.GoogleClientSecret, c.GoogleRedirectURL},
+		{"ZALO", c.ZaloAppID, c.ZaloAppSecret, c.ZaloRedirectURL},
+	} {
+		if (p.id == "") != (p.secret == "") {
+			return fmt.Errorf("%s: set both the id and the secret, or neither", p.name)
+		}
+		if p.id == "" {
+			continue
+		}
+		if err := checkURL(p.redirect, "http", "https"); err != nil {
+			return fmt.Errorf("%s_REDIRECT_URL: %w", p.name, err)
 		}
 	}
 	return nil
@@ -375,6 +428,19 @@ func (c Config) validateBackends() error {
 	}
 	if c.RealtimeMaxStreamsPerUser < 1 || c.RealtimeMaxStreamsPerUser > 100 {
 		return fmt.Errorf("REALTIME_MAX_STREAMS_PER_USER must be between 1 and 100, got %d", c.RealtimeMaxStreamsPerUser)
+	}
+	for name, bounds := range map[string][3]int{
+		"REPORT_WS_MAX_MESSAGE_BYTES":      {c.ReportWSMaxMessageBytes, 512, 1 << 20},
+		"REPORT_WS_MESSAGES_PER_MINUTE":    {c.ReportWSMessagesPerMinute, 1, 6000},
+		"REPORT_WS_MAX_SOCKETS_PER_USER":   {c.ReportWSMaxSocketsPerUser, 1, 100},
+		"REPORT_WS_MAX_SOCKETS_PER_REPORT": {c.ReportWSMaxSocketsPerReport, 1, 100},
+	} {
+		if bounds[0] < bounds[1] || bounds[0] > bounds[2] {
+			return fmt.Errorf("%s must be between %d and %d, got %d", name, bounds[1], bounds[2], bounds[0])
+		}
+	}
+	if c.ReportWSWriteTimeout < time.Second || c.ReportWSWriteTimeout > time.Minute {
+		return fmt.Errorf("REPORT_WS_WRITE_TIMEOUT must be between 1s and 1m, got %s", c.ReportWSWriteTimeout)
 	}
 	if c.SeedDemoPassword != "" && len(c.SeedDemoPassword) < minSeedPasswordBytes {
 		return fmt.Errorf("SEED_DEMO_PASSWORD must be at least %d characters", minSeedPasswordBytes)

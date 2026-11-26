@@ -72,3 +72,13 @@ type DemoUser struct {
 	TermsVersion   string
 	Now            time.Time
 }
+
+// NewSocialUser is an account created by signing in with a provider: no password, and an email only when the
+// provider vouched for it (which also makes it verified). It has not accepted the terms yet.
+type NewSocialUser struct {
+	ID             uuid.UUID
+	Email          *string
+	FullName       string
+	LastActiveRole string
+	CreatedAt      time.Time
+}
