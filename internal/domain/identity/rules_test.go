@@ -88,10 +88,22 @@ func TestDemoAccountsNeverMixStaffWithOthers(t *testing.T) {
 	if len(accounts) != 4 {
 		t.Fatalf("expected 4 demo accounts, got %d", len(accounts))
 	}
-	for _, a := range accounts {
+	samples := SampleAccounts()
+	if len(samples) != 6 {
+		t.Fatalf("expected 6 sample accounts, got %d", len(samples))
+	}
+	seen := map[string]bool{}
+	for _, a := range append(accounts, samples...) {
 		if len(a.Roles) == 0 {
 			t.Errorf("%s has no role", a.Email)
 		}
+		if err := ValidateRoleGrant(a.Roles); err != nil {
+			t.Errorf("%s: %v", a.Email, err)
+		}
+		if seen[a.Email] {
+			t.Errorf("%s is listed twice", a.Email)
+		}
+		seen[a.Email] = true
 	}
 }
 

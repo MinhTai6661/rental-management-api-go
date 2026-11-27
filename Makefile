@@ -16,10 +16,12 @@ GO = $(DOCKER_RUN) $(GO_IMAGE) go
 COMPOSE_NETWORK ?= rental_management_network
 DEV_DATABASE_URL ?= postgres://rental_management:rental_management@postgres:5432/rental_management_dev?sslmode=disable
 SEED_DEMO_PASSWORD ?= demo-password-123
+# The sample accounts of the docs sheet (`@rental.com`); set it empty to leave them out.
+SEED_SAMPLE_PASSWORD ?= 12345678
 # Development only (the same value as compose.yaml): the key that encrypts the links of bills. Never use it elsewhere.
 DEV_DATA_ENCRYPTION_KEY ?= MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 RENTAL_MANAGEMENT = docker run --rm --network $(COMPOSE_NETWORK) -e DATABASE_URL="$(DEV_DATABASE_URL)" -e APP_ENV=local \
-	-e SEED_DEMO_PASSWORD="$(SEED_DEMO_PASSWORD)" -e DATA_ENCRYPTION_KEY="$(DEV_DATA_ENCRYPTION_KEY)" \
+	-e SEED_DEMO_PASSWORD="$(SEED_DEMO_PASSWORD)" -e SEED_SAMPLE_PASSWORD="$(SEED_SAMPLE_PASSWORD)" -e DATA_ENCRYPTION_KEY="$(DEV_DATA_ENCRYPTION_KEY)" \
 	-v "$(CURDIR)":/src -w /src -v rental-management-go-mod:/go/pkg/mod -v rental-management-go-build:/root/.cache/go-build \
 	$(GO_IMAGE) go run ./cmd/rental-management
 

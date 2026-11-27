@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"time"
 
@@ -95,6 +96,15 @@ func runSeed(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "seeded the demo accounts (%d); the password is SEED_DEMO_PASSWORD\n", len(domain.DemoAccounts()))
+		if cfg.SeedSamplePassword != "" {
+			samples, err := seeder.SeedSamples(ctx, cfg.SeedSamplePassword, cfg.TermsVersion, time.Now())
+			if err != nil {
+				return err
+			}
+			// Their ids join the others, so the plan assignments below reach them too.
+			maps.Copy(ids, samples)
+			_, _ = fmt.Fprintf(out, "seeded the sample accounts (%d); the password is SEED_SAMPLE_PASSWORD\n", len(samples))
+		}
 
 		// The seed stores no pictures, so it gets an in-memory store instead of touching the media directory.
 		offers := newListings(log, pool, pricing, nil)

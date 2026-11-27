@@ -53,5 +53,9 @@ func DemoAssignments() []DemoAssignment {
 		{Email: "landlord@rental.test", PlanCode: "landlord_vip"},
 		{Email: "landlord2@rental.test", PlanCode: "landlord_pro"},
 		{Email: "tenant@rental.test", PlanCode: "tenant_plus"},
+		// The sample accounts (only where they were seeded); landlord3 stays on the free plan.
+		{Email: "landlord@rental.com", PlanCode: "landlord_vip"},
+		{Email: "landlord2@rental.com", PlanCode: "landlord_pro"},
+		{Email: "tenant@rental.com", PlanCode: "tenant_plus"},
 	}
 }

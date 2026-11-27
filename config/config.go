@@ -172,6 +172,9 @@ type Config struct {
 
 	// SeedDemoPassword is the password of the demo accounts `seed -demo` creates (development only).
 	SeedDemoPassword string `env:"SEED_DEMO_PASSWORD"`
+	// SeedSamplePassword, when set, makes `seed -demo` also create the sample accounts (`@rental.com`) with it. Empty
+	// by default: their addresses are written down in the project docs, so they only exist where somebody asks.
+	SeedSamplePassword string `env:"SEED_SAMPLE_PASSWORD"`
 }
 
 // maxInvitationTTLDays is the longest an invitation may stay open.
@@ -444,6 +447,9 @@ func (c Config) validateBackends() error {
 	}
 	if c.SeedDemoPassword != "" && len(c.SeedDemoPassword) < minSeedPasswordBytes {
 		return fmt.Errorf("SEED_DEMO_PASSWORD must be at least %d characters", minSeedPasswordBytes)
+	}
+	if c.SeedSamplePassword != "" && len(c.SeedSamplePassword) < minSeedPasswordBytes {
+		return fmt.Errorf("SEED_SAMPLE_PASSWORD must be at least %d characters", minSeedPasswordBytes)
 	}
 	return nil
 }

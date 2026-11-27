@@ -44,11 +44,19 @@ func (s *Seeder) SeedCatalog(ctx context.Context) error {
 // sets the password again. The roles and provinces must be seeded first (roles are referenced, the ward is taken
 // from the seeded divisions).
 func (s *Seeder) SeedDemo(ctx context.Context, password, termsVersion string, now time.Time) (map[string]uuid.UUID, error) {
+	return s.seedAccounts(ctx, domain.DemoAccounts(), password, termsVersion, now)
+}
+
+// SeedSamples creates (or refreshes) the sample accounts the same way, with their own password.
+func (s *Seeder) SeedSamples(ctx context.Context, password, termsVersion string, now time.Time) (map[string]uuid.UUID, error) {
+	return s.seedAccounts(ctx, domain.SampleAccounts(), password, termsVersion, now)
+}
+
+func (s *Seeder) seedAccounts(ctx context.Context, accounts []domain.DemoAccount, password, termsVersion string, now time.Time) (map[string]uuid.UUID, error) {
 	hash, err := s.hasher.Hash(password)
 	if err != nil {
 		return nil, err
 	}
-	accounts := domain.DemoAccounts()
 	ids := make(map[string]uuid.UUID, len(accounts))
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		var ward *int32
