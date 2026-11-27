@@ -63,6 +63,12 @@ func TestProofLinkCannotBeTamperedWith(t *testing.T) {
 	now := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
 	_, expires, sig := parse(t, p.Link(id, "0.webp", now.Add(time.Hour)))
 
+	// Change the first digit to a different one (writing a fixed "0" would leave 1 in 16 signatures untouched).
+	flipped := "0" + sig[1:]
+	if sig[0] == '0' {
+		flipped = "1" + sig[1:]
+	}
+
 	for name, ok := range map[string]bool{
 		"another file":      p.Valid(id, "1.webp", expires, sig, now),
 		"the small copy":    p.Valid(id, "0_thumb.webp", expires, sig, now),
@@ -72,7 +78,7 @@ func TestProofLinkCannotBeTamperedWith(t *testing.T) {
 		"no signature":      p.Valid(id, "0.webp", expires, "", now),
 		"not hex":           p.Valid(id, "0.webp", expires, strings.Repeat("zz", 32), now),
 		"a short signature": p.Valid(id, "0.webp", expires, sig[:32], now),
-		"a flipped bit":     p.Valid(id, "0.webp", expires, "0"+sig[1:], now),
+		"a flipped bit":     p.Valid(id, "0.webp", expires, flipped, now),
 	} {
 		if ok {
 			t.Errorf("%s must be refused", name)
